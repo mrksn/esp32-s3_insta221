@@ -1,0 +1,14 @@
+# ESP32-S3 Configuration
+CONFIG_IDF_TARGET="esp32s3"
+
+# FreeRTOS Configuration
+CONFIG_FREERTOS_HZ=1000
+
+# NVS Configuration
+CONFIG_NVS_ENCRYPTION=0
+
+# SPI Configuration for MAX31855
+CONFIG_SPI_MASTER_ISR_IN_IRAM=y
+
+# I2C Configuration for OLED
+CONFIG_I2C_MASTER_ISR_IN_IRAM=y

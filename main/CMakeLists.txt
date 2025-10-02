@@ -1,0 +1,20 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "ui_state.c"
+        "data_model.c"
+        "utils/application_state.c"
+        "pid/pid_controller.c"
+        "pid/pid_autotune.c"
+    INCLUDE_DIRS
+        "."
+        "../include"
+        "utils"
+        "pid"
+    REQUIRES
+        display
+        sensors
+        controls
+        heating
+        storage
+)
