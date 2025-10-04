@@ -297,12 +297,29 @@ void ui_task(void *pvParameters)
 
         if (current_press_state && !last_press_state && safety_ok)
         {
-            // Press closed - validate conditions before starting cycle
-            if (ui_get_current_state() == UI_STATE_START_PRESSING && validate_cycle_safety())
+            ESP_LOGI(TAG, "Press closed detected. UI state: %d, pressing_active: %d, current_stage: %d",
+                     ui_get_current_state(), pressing_active, current_stage);
+
+            // Check if we're waiting for Stage 2 to start
+            if (pressing_active && current_stage == IDLE)
+            {
+                // Press closed again after Stage 1 - start Stage 2
+                ESP_LOGI(TAG, "Press closed - starting Stage 2");
+                current_stage = STAGE2;
+                stage_start_time = esp_timer_get_time() / 1000000;
+                current_cycle.status = STAGE2;
+            }
+            // Press closed - validate conditions before starting new cycle
+            else if (ui_get_current_state() == UI_STATE_START_PRESSING && validate_cycle_safety())
             {
                 press_safety_locked = false; // Release safety lock for validated cycle
                 start_pressing_cycle();
+                ui_set_state(UI_STATE_PRESSING_ACTIVE); // Transition UI to pressing active state
                 ESP_LOGI(TAG, "Press cycle started with all safety checks passed");
+            }
+            else if (ui_get_current_state() != UI_STATE_START_PRESSING && !pressing_active)
+            {
+                ESP_LOGW(TAG, "Press closed but not in START_PRESSING state (current: %d)", ui_get_current_state());
             }
             else if (!validate_cycle_safety())
             {
@@ -312,11 +329,20 @@ void ui_task(void *pvParameters)
         }
         else if (!current_press_state && last_press_state)
         {
-            // Press opened - complete current cycle if active
+            // Press opened
             if (pressing_active)
             {
-                complete_pressing_cycle();
-                press_safety_locked = true; // Re-engage safety lock
+                if (current_stage == STAGE2)
+                {
+                    // Stage 2 was active - complete the cycle
+                    complete_pressing_cycle();
+                    press_safety_locked = true; // Re-engage safety lock
+                }
+                else if (current_stage == IDLE)
+                {
+                    // Stage 1 completed, waiting for repress for Stage 2
+                    ESP_LOGI(TAG, "Press opened after Stage 1 - ready for Stage 2");
+                }
             }
         }
 
@@ -627,16 +653,15 @@ void update_pressing_cycle(void)
 
     if (current_stage == STAGE1 && stage_elapsed >= current_cycle.stage1_duration)
     {
-        // Advance to stage 2
-        current_stage = STAGE2;
-        stage_start_time = current_time;
-        current_cycle.status = STAGE2;
-        ESP_LOGI(TAG, "Advanced to stage 2 (safety checks passed)");
+        // Stage 1 complete - wait for press to open before advancing
+        current_stage = IDLE;  // Set to IDLE to indicate waiting for press open
+        current_cycle.status = IDLE;
+        ESP_LOGI(TAG, "Stage 1 complete - waiting for press to open and reclose for Stage 2");
     }
     else if (current_stage == STAGE2 && stage_elapsed >= current_cycle.stage2_duration)
     {
-        // Complete cycle
-        complete_pressing_cycle();
+        // Stage 2 complete - wait for press to open to complete cycle
+        ESP_LOGI(TAG, "Stage 2 complete - waiting for press to open to finish");
     }
 }
 
@@ -669,6 +694,9 @@ void complete_pressing_cycle(void)
         current_stage = IDLE;
         cycle_start_time = 0;
         stage_start_time = 0;
+
+        // Return UI to start pressing state so user can start next shirt
+        ui_set_state(UI_STATE_START_PRESSING);
 
         ESP_LOGI(TAG, "Completed pressing cycle for shirt %d in %d seconds",
                  current_cycle.shirt_id, cycle_duration);

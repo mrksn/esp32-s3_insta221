@@ -10,11 +10,11 @@ static const char *TAG = "controls";
 #define ROTARY_B_PIN GPIO_NUM_4
 #define ROTARY_BUTTON_PIN GPIO_NUM_6
 #define CONFIRM_BUTTON_PIN GPIO_NUM_7
-#define BACK_BUTTON_PIN GPIO_NUM_14       // Moved from GPIO 15 (strapping pin)
-#define PAUSE_BUTTON_PIN GPIO_NUM_15      // Moved from GPIO 16
+#define BACK_BUTTON_PIN GPIO_NUM_14  // Moved from GPIO 15 (strapping pin)
+#define PAUSE_BUTTON_PIN GPIO_NUM_15 // Moved from GPIO 16
 #define REED_SWITCH_PIN GPIO_NUM_17
-#define LED_GREEN_PIN GPIO_NUM_18    // Temperature ready indicator
-#define LED_BLUE_PIN GPIO_NUM_19     // Pause mode indicator
+#define LED_GREEN_PIN GPIO_NUM_18 // Temperature ready indicator
+#define LED_BLUE_PIN GPIO_NUM_19  // Pause mode indicator
 
 // Rotary encoder state
 static volatile int rotary_counter = 0;
@@ -31,8 +31,8 @@ static volatile uint32_t last_confirm_time = 0;
 static volatile uint32_t last_back_time = 0;
 static volatile uint32_t last_pause_time = 0;
 static volatile uint32_t last_rotary_button_time = 0;
-#define DEBOUNCE_TIME_MS 20  // For regular buttons
-#define ROTARY_BUTTON_DEBOUNCE_MS 200  // Encoder button needs longer debounce
+#define DEBOUNCE_TIME_MS 20           // For regular buttons
+#define ROTARY_BUTTON_DEBOUNCE_MS 200 // Encoder button needs longer debounce
 
 static void IRAM_ATTR rotary_isr_handler(void *arg)
 {
@@ -42,12 +42,17 @@ static void IRAM_ATTR rotary_isr_handler(void *arg)
     uint8_t pin_b = gpio_get_level(ROTARY_B_PIN);
 
     // Simple quadrature detection
-    if (pin_a != last_a) {
-        if (pin_a == 0) { // Falling edge on A
-            if (pin_b == 1) {
-                rotary_counter++;  // CW
-            } else {
-                rotary_counter--;  // CCW
+    if (pin_a != last_a)
+    {
+        if (pin_a == 0)
+        { // Falling edge on A
+            if (pin_b == 1)
+            {
+                rotary_counter++; // CW
+            }
+            else
+            {
+                rotary_counter--; // CCW
             }
         }
     }
@@ -218,7 +223,18 @@ rotary_event_t controls_get_rotary_event(void)
 
 bool controls_is_press_closed(void)
 {
-    return gpio_get_level(REED_SWITCH_PIN) == 0; // Assuming active low
+    int level = gpio_get_level(REED_SWITCH_PIN);
+    bool closed = (level == 0); // Active low (switch connects to GND)
+    static bool last_closed = false;
+
+    // Log state changes
+    if (closed != last_closed)
+    {
+        ESP_LOGI(TAG, "Reed switch %s (GPIO level: %d)", closed ? "CLOSED" : "OPEN", level);
+        last_closed = closed;
+    }
+
+    return closed;
 }
 
 void controls_set_led_green(bool on)

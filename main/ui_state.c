@@ -15,6 +15,7 @@
 #include "data_model.h"
 #include "system_config.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include <esp_err.h>
 #include <string.h>
 #include <stdio.h>
@@ -159,6 +160,12 @@ void ui_update(float current_temp)
     {
         display_needs_update = true;
         ui_previous_state = ui_current_state;
+    }
+
+    // Always update display during pressing to show countdown
+    if (ui_current_state == UI_STATE_PRESSING_ACTIVE)
+    {
+        display_needs_update = true;
     }
 
     // Only update display when needed
@@ -499,7 +506,8 @@ static void handle_start_pressing_state(ui_event_t event)
     switch (event)
     {
     case UI_EVENT_PRESS_CLOSED:
-        ui_current_state = UI_STATE_PRESSING_ACTIVE;
+        // Don't transition here - let main.c handle the press detection and start the cycle
+        // main.c will transition to UI_STATE_PRESSING_ACTIVE when cycle starts
         break;
 
     case UI_EVENT_BUTTON_BACK:
@@ -661,14 +669,54 @@ static void render_start_pressing(void)
 
 static void render_pressing_active(void)
 {
-    char buffer[32];
+    extern pressing_cycle_t current_cycle;
+    extern uint32_t stage_start_time;
+    extern cycle_status_t current_stage;
 
-    display_clear();
-    display_text(0, 0, "Pressing Active");
-    sprintf(buffer, "Temp: %.1f C", temperature_display_celsius);
-    display_text(0, 1, buffer);
-    display_text(0, 2, "Keep press closed");
-    display_flush();
+    static uint32_t last_time_remaining = 9999;
+    static cycle_status_t last_stage = IDLE;
+    static bool screen_initialized = false;
+
+    char buffer[32];
+    uint32_t current_time = esp_timer_get_time() / 1000000;  // Convert to seconds
+    uint32_t stage_elapsed = current_time - stage_start_time;
+    uint32_t stage_duration = (current_stage == STAGE1) ?
+                               current_cycle.stage1_duration :
+                               current_cycle.stage2_duration;
+    uint32_t time_remaining = (stage_elapsed < stage_duration) ?
+                               (stage_duration - stage_elapsed) : 0;
+
+    // Full redraw when stage changes or waiting between stages
+    if (current_stage != last_stage || !screen_initialized)
+    {
+        display_clear();
+
+        if (current_stage == IDLE)
+        {
+            // Waiting between Stage 1 and Stage 2
+            display_text(0, 0, "Stage 1 Done!");
+            display_text(0, 1, "Open press, then");
+            display_text(0, 2, "close for Stage 2");
+            display_flush();
+            screen_initialized = true;
+            last_stage = current_stage;
+            return;  // Don't show countdown when waiting
+        }
+
+        display_text(0, 0, (current_stage == STAGE1) ? "Stage 1" : "Stage 2");
+        display_text(0, 2, "Keep press closed");
+        screen_initialized = true;
+        last_stage = current_stage;
+    }
+
+    // Update only the countdown number (line 1) when time changes
+    if (time_remaining != last_time_remaining && current_stage != IDLE)
+    {
+        sprintf(buffer, "   %lu sec   ", time_remaining);  // Extra spaces to clear previous digits
+        display_text(0, 1, buffer);
+        display_flush();
+        last_time_remaining = time_remaining;
+    }
 }
 
 static void render_statistics(void)
