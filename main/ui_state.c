@@ -27,8 +27,10 @@ static const char *TAG = "ui_state";
 
 // Current state
 static ui_state_t ui_current_state = UI_STATE_INIT;
+static ui_state_t ui_previous_state = UI_STATE_INIT;
 static menu_item_t menu_selected_item = MENU_JOB_SETUP;
 static settings_item_t settings_selected_item = SETTINGS_TARGET_TEMP;
+static bool display_needs_update = true;
 
 // Menu items
 static const char *main_menu_items[] = {
@@ -88,6 +90,7 @@ extern uint8_t get_autotune_progress(void);
 static void handle_main_menu_state(ui_event_t event);
 static void handle_job_setup_state(ui_event_t event);
 static void handle_settings_menu_state(ui_event_t event);
+static void handle_settings_adjust_state(ui_event_t event);
 static void handle_start_pressing_state(ui_event_t event);
 static void handle_pressing_active_state(ui_event_t event);
 static void handle_statistics_state(ui_event_t event);
@@ -98,6 +101,7 @@ static void handle_autotune_complete_state(ui_event_t event);  // NEW
 static void render_main_menu(void);
 static void render_job_setup(void);
 static void render_settings_menu(void);
+static void render_settings_adjust(void);
 static void render_start_pressing(void);
 static void render_pressing_active(void);
 static void render_statistics(void);
@@ -120,6 +124,7 @@ static const state_handler_entry_t state_handlers[] = {
     {UI_STATE_MAIN_MENU, handle_main_menu_state, render_main_menu, "Main Menu"},
     {UI_STATE_JOB_SETUP, handle_job_setup_state, render_job_setup, "Job Setup"},
     {UI_STATE_SETTINGS_MENU, handle_settings_menu_state, render_settings_menu, "Settings"},
+    {UI_STATE_SETTINGS_ADJUST, handle_settings_adjust_state, render_settings_adjust, "Adjust Setting"},
     {UI_STATE_START_PRESSING, handle_start_pressing_state, render_start_pressing, "Start Pressing"},
     {UI_STATE_PRESSING_ACTIVE, handle_pressing_active_state, render_pressing_active, "Pressing Active"},
     {UI_STATE_STATISTICS, handle_statistics_state, render_statistics, "Statistics"},
@@ -146,8 +151,22 @@ void ui_update(float current_temp)
     if (event != UI_EVENT_NONE)
     {
         ui_process_event(event);
+        display_needs_update = true;  // Mark display for update after event
     }
-    ui_update_display();
+
+    // Check if state changed
+    if (ui_current_state != ui_previous_state)
+    {
+        display_needs_update = true;
+        ui_previous_state = ui_current_state;
+    }
+
+    // Only update display when needed
+    if (display_needs_update)
+    {
+        ui_update_display();
+        display_needs_update = false;
+    }
 }
 
 ui_event_t ui_get_event(void)
@@ -162,9 +181,9 @@ ui_event_t ui_get_event(void)
     }
 
     // Button events (check these FIRST - they're more important than rotary)
-    if (button == BUTTON_CONFIRM) {
-        ESP_LOGI(TAG, "UI Event: BUTTON_CONFIRM");
-        return UI_EVENT_BUTTON_CONFIRM;
+    if (button == BUTTON_SAVE) {
+        ESP_LOGI(TAG, "UI Event: BUTTON_SAVE");
+        return UI_EVENT_BUTTON_SAVE;
     }
     if (button == BUTTON_BACK) {
         ESP_LOGI(TAG, "UI Event: BUTTON_BACK");
@@ -172,6 +191,10 @@ ui_event_t ui_get_event(void)
     }
 
     // Rotary events
+    if (rotary == ROTARY_PUSH) {
+        ESP_LOGI(TAG, "UI Event: ROTARY_PUSH");
+        return UI_EVENT_ROTARY_PUSH;
+    }
     if (rotary == ROTARY_CW)
         return UI_EVENT_ROTARY_CW;
     if (rotary == ROTARY_CCW)
@@ -225,6 +248,7 @@ void ui_update_display(void)
     char buffer[32];
     sprintf(buffer, "Temp: %.1f C", temperature_display_celsius);
     display_text(0, 1, buffer);
+    display_flush();
 }
 
 ui_state_t ui_get_current_state(void)
@@ -273,8 +297,8 @@ static void handle_main_menu_state(ui_event_t event)
         ESP_LOGI(TAG, "Menu item selected: %d", menu_selected_item);
         break;
 
-    case UI_EVENT_BUTTON_CONFIRM:
-        ESP_LOGI(TAG, "Confirm pressed, entering menu item: %d", menu_selected_item);
+    case UI_EVENT_ROTARY_PUSH:
+        ESP_LOGI(TAG, "Encoder push pressed, entering menu item: %d", menu_selected_item);
         switch (menu_selected_item)
         {
         case MENU_JOB_SETUP:
@@ -338,7 +362,7 @@ static void handle_job_setup_state(ui_event_t event)
         }
         break;
 
-    case UI_EVENT_BUTTON_CONFIRM:
+    case UI_EVENT_ROTARY_PUSH:
         if (job_setup_selected_index == JOB_ITEM_PRINT_TYPE)
         {
             current_run->type = (current_run->type == SINGLE_SIDED) ?
@@ -367,7 +391,7 @@ static void handle_settings_menu_state(ui_event_t event)
         settings_selected_item = MENU_WRAP(settings_selected_item - 1, SETTINGS_COUNT);
         break;
 
-    case UI_EVENT_BUTTON_CONFIRM:
+    case UI_EVENT_ROTARY_PUSH:
         // Check if Auto-Tune PID was selected
         if (settings_selected_item == SETTINGS_AUTOTUNE_PID)
         {
@@ -382,7 +406,87 @@ static void handle_settings_menu_state(ui_event_t event)
                 ESP_LOGW(TAG, "Failed to start auto-tune from UI");
             }
         }
-        // Could enter adjustment mode for other settings if needed
+        else
+        {
+            // Enter adjustment mode for all other settings
+            ui_current_state = UI_STATE_SETTINGS_ADJUST;
+            ESP_LOGI(TAG, "Entering adjustment mode for setting: %d", settings_selected_item);
+        }
+        break;
+
+    default:
+        break;
+    }
+}
+
+static void handle_settings_adjust_state(ui_event_t event)
+{
+    switch (event)
+    {
+    case UI_EVENT_BUTTON_BACK:
+        // Exit adjustment mode without saving
+        ui_current_state = UI_STATE_SETTINGS_MENU;
+        ESP_LOGI(TAG, "Adjustment cancelled");
+        break;
+
+    case UI_EVENT_BUTTON_SAVE:
+        // Save and exit adjustment mode
+        ui_current_state = UI_STATE_SETTINGS_MENU;
+        ESP_LOGI(TAG, "Settings saved");
+        break;
+
+    case UI_EVENT_ROTARY_CW:
+        // Adjust value up based on selected setting
+        switch (settings_selected_item)
+        {
+        case SETTINGS_TARGET_TEMP:
+            current_settings->target_temp = CLAMP(current_settings->target_temp + 1.0f, 0.0f, 250.0f);
+            break;
+        case SETTINGS_PID_KP:
+            current_settings->pid_kp = CLAMP(current_settings->pid_kp + 0.1f, 0.0f, 100.0f);
+            break;
+        case SETTINGS_PID_KI:
+            current_settings->pid_ki = CLAMP(current_settings->pid_ki + 0.01f, 0.0f, 10.0f);
+            break;
+        case SETTINGS_PID_KD:
+            current_settings->pid_kd = CLAMP(current_settings->pid_kd + 0.1f, 0.0f, 100.0f);
+            break;
+        case SETTINGS_STAGE1_DEFAULT:
+            current_settings->stage1_default = CLAMP(current_settings->stage1_default + 1, 1, 300);
+            break;
+        case SETTINGS_STAGE2_DEFAULT:
+            current_settings->stage2_default = CLAMP(current_settings->stage2_default + 1, 1, 300);
+            break;
+        default:
+            break;
+        }
+        break;
+
+    case UI_EVENT_ROTARY_CCW:
+        // Adjust value down based on selected setting
+        switch (settings_selected_item)
+        {
+        case SETTINGS_TARGET_TEMP:
+            current_settings->target_temp = CLAMP(current_settings->target_temp - 1.0f, 0.0f, 250.0f);
+            break;
+        case SETTINGS_PID_KP:
+            current_settings->pid_kp = CLAMP(current_settings->pid_kp - 0.1f, 0.0f, 100.0f);
+            break;
+        case SETTINGS_PID_KI:
+            current_settings->pid_ki = CLAMP(current_settings->pid_ki - 0.01f, 0.0f, 10.0f);
+            break;
+        case SETTINGS_PID_KD:
+            current_settings->pid_kd = CLAMP(current_settings->pid_kd - 0.1f, 0.0f, 100.0f);
+            break;
+        case SETTINGS_STAGE1_DEFAULT:
+            current_settings->stage1_default = CLAMP(current_settings->stage1_default - 1, 1, 300);
+            break;
+        case SETTINGS_STAGE2_DEFAULT:
+            current_settings->stage2_default = CLAMP(current_settings->stage2_default - 1, 1, 300);
+            break;
+        default:
+            break;
+        }
         break;
 
     default:
@@ -463,6 +567,7 @@ static void render_job_setup(void)
     {
         display_text(0, 2, print_type_items[current_run->type]);
     }
+    display_flush();
 }
 
 static void render_settings_menu(void)
@@ -501,6 +606,43 @@ static void render_settings_menu(void)
         break;
     }
     display_text(0, 2, buffer);
+    display_flush();
+}
+
+static void render_settings_adjust(void)
+{
+    char buffer[32];
+
+    display_clear();
+    display_text(0, 0, "Adjust:");
+    display_text(0, 1, settings_menu_items[settings_selected_item]);
+
+    switch (settings_selected_item)
+    {
+    case SETTINGS_TARGET_TEMP:
+        sprintf(buffer, "> %.1f C <", current_settings->target_temp);
+        break;
+    case SETTINGS_PID_KP:
+        sprintf(buffer, "> %.2f <", current_settings->pid_kp);
+        break;
+    case SETTINGS_PID_KI:
+        sprintf(buffer, "> %.2f <", current_settings->pid_ki);
+        break;
+    case SETTINGS_PID_KD:
+        sprintf(buffer, "> %.2f <", current_settings->pid_kd);
+        break;
+    case SETTINGS_STAGE1_DEFAULT:
+        sprintf(buffer, "> %d s <", current_settings->stage1_default);
+        break;
+    case SETTINGS_STAGE2_DEFAULT:
+        sprintf(buffer, "> %d s <", current_settings->stage2_default);
+        break;
+    default:
+        sprintf(buffer, "Unknown");
+        break;
+    }
+    display_text(0, 2, buffer);
+    display_flush();
 }
 
 static void render_start_pressing(void)
@@ -514,6 +656,7 @@ static void render_start_pressing(void)
             current_settings->target_temp);
     display_text(0, 1, buffer);
     display_text(0, 2, "Close press to start");
+    display_flush();
 }
 
 static void render_pressing_active(void)
@@ -525,6 +668,7 @@ static void render_pressing_active(void)
     sprintf(buffer, "Temp: %.1f C", temperature_display_celsius);
     display_text(0, 1, buffer);
     display_text(0, 2, "Keep press closed");
+    display_flush();
 }
 
 static void render_statistics(void)
@@ -539,6 +683,7 @@ static void render_statistics(void)
     display_text(0, 1, buffer);
     sprintf(buffer, "Avg time: %lu s", current_run->avg_time_per_shirt);
     display_text(0, 2, buffer);
+    display_flush();
 }
 
 // =============================================================================
@@ -569,7 +714,7 @@ static void handle_autotune_complete_state(ui_event_t event)
 {
     switch (event)
     {
-    case UI_EVENT_BUTTON_CONFIRM:
+    case UI_EVENT_ROTARY_PUSH:
     case UI_EVENT_BUTTON_BACK:
         // Return to settings menu
         ui_current_state = UI_STATE_SETTINGS_MENU;
@@ -598,6 +743,7 @@ static void render_autotune(void)
 
     // Show cancel instruction
     display_text(0, 3, "BACK to cancel");
+    display_flush();
 }
 
 static void render_autotune_complete(void)
@@ -617,4 +763,5 @@ static void render_autotune_complete(void)
     display_text(0, 2, buffer);
 
     display_text(0, 3, "Press any button");
+    display_flush();
 }

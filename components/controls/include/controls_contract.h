@@ -10,7 +10,7 @@
 typedef enum
 {
     BUTTON_NONE,
-    BUTTON_CONFIRM,
+    BUTTON_SAVE,
     BUTTON_BACK,
     BUTTON_PAUSE
 } button_event_t;

@@ -278,6 +278,11 @@ static void draw_text_internal(uint8_t x, uint8_t y, const char *text)
 void display_text(uint8_t x, uint8_t y, const char *text)
 {
     draw_text_internal(x, y, text);
+    // Note: No auto-update to allow batching multiple text calls
+}
+
+void display_flush(void)
+{
     display_update();
 }
 

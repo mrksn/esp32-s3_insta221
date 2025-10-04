@@ -12,8 +12,11 @@ esp_err_t display_init(void);
 // Clear display
 void display_clear(void);
 
-// Display text at position (x,y)
+// Display text at position (x,y) - buffers only, doesn't update screen
 void display_text(uint8_t x, uint8_t y, const char *text);
+
+// Flush buffered changes to screen
+void display_flush(void);
 
 // Display menu with selection
 void display_menu(const char **items, uint8_t num_items, uint8_t selected);

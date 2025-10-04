@@ -31,7 +31,8 @@ static volatile uint32_t last_confirm_time = 0;
 static volatile uint32_t last_back_time = 0;
 static volatile uint32_t last_pause_time = 0;
 static volatile uint32_t last_rotary_button_time = 0;
-#define DEBOUNCE_TIME_MS 50
+#define DEBOUNCE_TIME_MS 20  // For regular buttons
+#define ROTARY_BUTTON_DEBOUNCE_MS 200  // Encoder button needs longer debounce
 
 static void IRAM_ATTR rotary_isr_handler(void *arg)
 {
@@ -86,7 +87,8 @@ static void IRAM_ATTR button_isr_handler(void *arg)
     }
     else if (pin == ROTARY_BUTTON_PIN)
     {
-        if ((now - last_rotary_button_time) > debounce_ticks)
+        uint32_t rotary_debounce_ticks = pdMS_TO_TICKS(ROTARY_BUTTON_DEBOUNCE_MS);
+        if ((now - last_rotary_button_time) > rotary_debounce_ticks)
         {
             rotary_button_pressed = true;
             last_rotary_button_time = now;
@@ -168,8 +170,8 @@ button_event_t controls_get_button_event(void)
     if (confirm_pressed)
     {
         confirm_pressed = false;
-        ESP_LOGI(TAG, "Confirm button pressed");
-        return BUTTON_CONFIRM;
+        ESP_LOGI(TAG, "Save button pressed");
+        return BUTTON_SAVE;
     }
     if (back_pressed)
     {
