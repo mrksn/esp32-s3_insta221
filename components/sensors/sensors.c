@@ -26,10 +26,10 @@ static const char *TAG = "sensors";
 // SPI Configuration for MAX31855
 #define SPI_HOST SPI2_HOST
 #define SPI_CLOCK_SPEED_HZ 5000000 ///< 5 MHz SPI clock (within MAX31855 spec)
-#define PIN_NUM_MISO GPIO_NUM_13   ///< SPI MISO pin
-#define PIN_NUM_MOSI GPIO_NUM_11   ///< SPI MOSI pin
-#define PIN_NUM_CLK GPIO_NUM_12    ///< SPI clock pin
-#define PIN_NUM_CS GPIO_NUM_10     ///< Chip select pin
+#define PIN_NUM_MISO GPIO_NUM_10   ///< SPI MISO pin (DO)
+#define PIN_NUM_MOSI -1            ///< Not used for MAX31855
+#define PIN_NUM_CLK GPIO_NUM_11    ///< SPI clock pin
+#define PIN_NUM_CS GPIO_NUM_13     ///< Chip select pin
 
 static spi_device_handle_t spi_handle; ///< SPI device handle for MAX31855
 
@@ -65,10 +65,11 @@ esp_err_t sensor_init(void)
 
     // SPI device configuration for MAX31855
     spi_device_interface_config_t devcfg = {
-        .clock_speed_hz = SPI_CLOCK_SPEED_HZ,
-        .mode = 0, // SPI mode 0 (CPOL=0, CPHA=0)
+        .clock_speed_hz = 1000000,  // Reduce to 1MHz for debugging
+        .mode = 1, // SPI mode 1 (CPOL=0, CPHA=1) - try alternative mode
         .spics_io_num = PIN_NUM_CS,
         .queue_size = 1, // Single transaction queue
+        .flags = SPI_DEVICE_NO_DUMMY,  // No dummy bits
         .pre_cb = NULL,  // No pre-transfer callback
         .post_cb = NULL, // No post-transfer callback
     };

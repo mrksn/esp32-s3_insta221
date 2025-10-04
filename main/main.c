@@ -366,6 +366,9 @@ void temp_control_task(void *pvParameters)
             last_temp_reading = esp_timer_get_time() / 1000000;
             sensor_error_count = 0; // Reset error count on successful read
 
+            // Log temperature to console
+            ESP_LOGI(TAG, "Temperature: %.2f°C", current_temperature);
+
             // Check if auto-tuning is in progress
             if (is_autotuning)
             {
