@@ -5,13 +5,13 @@
 
 static const char *TAG = "controls";
 
-// GPIO pins
-#define ROTARY_A_PIN GPIO_NUM_4
-#define ROTARY_B_PIN GPIO_NUM_5
+// GPIO pins (A and B swapped to fix direction detection)
+#define ROTARY_A_PIN GPIO_NUM_5
+#define ROTARY_B_PIN GPIO_NUM_4
 #define ROTARY_BUTTON_PIN GPIO_NUM_6
 #define CONFIRM_BUTTON_PIN GPIO_NUM_7
-#define BACK_BUTTON_PIN GPIO_NUM_15
-#define PAUSE_BUTTON_PIN GPIO_NUM_16
+#define BACK_BUTTON_PIN GPIO_NUM_14       // Moved from GPIO 15 (strapping pin)
+#define PAUSE_BUTTON_PIN GPIO_NUM_15      // Moved from GPIO 16
 #define REED_SWITCH_PIN GPIO_NUM_17
 #define LED_GREEN_PIN GPIO_NUM_18    // Temperature ready indicator
 #define LED_BLUE_PIN GPIO_NUM_19     // Pause mode indicator
@@ -26,48 +26,71 @@ static volatile bool back_pressed = false;
 static volatile bool pause_pressed = false;
 static volatile bool rotary_button_pressed = false;
 
+// Debounce tracking (timestamps in ticks)
+static volatile uint32_t last_confirm_time = 0;
+static volatile uint32_t last_back_time = 0;
+static volatile uint32_t last_pause_time = 0;
+static volatile uint32_t last_rotary_button_time = 0;
+#define DEBOUNCE_TIME_MS 50
+
 static void IRAM_ATTR rotary_isr_handler(void *arg)
 {
+    static uint8_t last_a = 1;
+
     uint8_t pin_a = gpio_get_level(ROTARY_A_PIN);
     uint8_t pin_b = gpio_get_level(ROTARY_B_PIN);
 
-    uint8_t state = (pin_b << 1) | pin_a;
-    uint8_t old_state = rotary_state & 0x03;
-
-    if (state != old_state)
-    {
-        if ((old_state == 0 && state == 1) || (old_state == 2 && state == 3) ||
-            (old_state == 3 && state == 0) || (old_state == 1 && state == 2))
-        {
-            rotary_counter++;
+    // Simple quadrature detection
+    if (pin_a != last_a) {
+        if (pin_a == 0) { // Falling edge on A
+            if (pin_b == 1) {
+                rotary_counter++;  // CW
+            } else {
+                rotary_counter--;  // CCW
+            }
         }
-        else if ((old_state == 0 && state == 2) || (old_state == 2 && state == 0) ||
-                 (old_state == 3 && state == 1) || (old_state == 1 && state == 3))
-        {
-            rotary_counter--;
-        }
-        rotary_state = (rotary_state << 2) | state;
     }
+
+    last_a = pin_a;
 }
 
 static void IRAM_ATTR button_isr_handler(void *arg)
 {
-    int pin = (int)arg;
+    uint32_t pin = (uint32_t)arg;
+    uint32_t now = xTaskGetTickCountFromISR();
+    uint32_t debounce_ticks = pdMS_TO_TICKS(DEBOUNCE_TIME_MS);
 
-    switch (pin)
+    if (pin == CONFIRM_BUTTON_PIN)
     {
-    case CONFIRM_BUTTON_PIN:
-        confirm_pressed = true;
-        break;
-    case BACK_BUTTON_PIN:
-        back_pressed = true;
-        break;
-    case PAUSE_BUTTON_PIN:
-        pause_pressed = true;
-        break;
-    case ROTARY_BUTTON_PIN:
-        rotary_button_pressed = true;
-        break;
+        if ((now - last_confirm_time) > debounce_ticks)
+        {
+            confirm_pressed = true;
+            last_confirm_time = now;
+        }
+    }
+    else if (pin == BACK_BUTTON_PIN)
+    {
+        if ((now - last_back_time) > debounce_ticks)
+        {
+            back_pressed = true;
+            last_back_time = now;
+        }
+    }
+    else if (pin == PAUSE_BUTTON_PIN)
+    {
+        if ((now - last_pause_time) > debounce_ticks)
+        {
+            pause_pressed = true;
+            last_pause_time = now;
+        }
+    }
+    else if (pin == ROTARY_BUTTON_PIN)
+    {
+        if ((now - last_rotary_button_time) > debounce_ticks)
+        {
+            rotary_button_pressed = true;
+            last_rotary_button_time = now;
+        }
     }
 }
 
@@ -121,15 +144,20 @@ esp_err_t controls_init(void)
     gpio_set_level(LED_BLUE_PIN, 0);
 
     // Install ISR service
-    gpio_install_isr_service(0);
+    esp_err_t ret = gpio_install_isr_service(0);
+    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) // ESP_ERR_INVALID_STATE means already installed
+    {
+        ESP_LOGE(TAG, "Failed to install GPIO ISR service: %s", esp_err_to_name(ret));
+        return ret;
+    }
 
     // Add ISR handlers
     gpio_isr_handler_add(ROTARY_A_PIN, rotary_isr_handler, NULL);
     gpio_isr_handler_add(ROTARY_B_PIN, rotary_isr_handler, NULL);
-    gpio_isr_handler_add(CONFIRM_BUTTON_PIN, button_isr_handler, (void *)CONFIRM_BUTTON_PIN);
-    gpio_isr_handler_add(BACK_BUTTON_PIN, button_isr_handler, (void *)BACK_BUTTON_PIN);
-    gpio_isr_handler_add(PAUSE_BUTTON_PIN, button_isr_handler, (void *)PAUSE_BUTTON_PIN);
-    gpio_isr_handler_add(ROTARY_BUTTON_PIN, button_isr_handler, (void *)ROTARY_BUTTON_PIN);
+    gpio_isr_handler_add(CONFIRM_BUTTON_PIN, button_isr_handler, (void *)(uint32_t)CONFIRM_BUTTON_PIN);
+    gpio_isr_handler_add(BACK_BUTTON_PIN, button_isr_handler, (void *)(uint32_t)BACK_BUTTON_PIN);
+    gpio_isr_handler_add(PAUSE_BUTTON_PIN, button_isr_handler, (void *)(uint32_t)PAUSE_BUTTON_PIN);
+    gpio_isr_handler_add(ROTARY_BUTTON_PIN, button_isr_handler, (void *)(uint32_t)ROTARY_BUTTON_PIN);
 
     ESP_LOGI(TAG, "Controls initialized successfully");
     return ESP_OK;
@@ -140,16 +168,19 @@ button_event_t controls_get_button_event(void)
     if (confirm_pressed)
     {
         confirm_pressed = false;
+        ESP_LOGI(TAG, "Confirm button pressed");
         return BUTTON_CONFIRM;
     }
     if (back_pressed)
     {
         back_pressed = false;
+        ESP_LOGI(TAG, "Back button pressed");
         return BUTTON_BACK;
     }
     if (pause_pressed)
     {
         pause_pressed = false;
+        ESP_LOGI(TAG, "Pause button pressed");
         return BUTTON_PAUSE;
     }
     return BUTTON_NONE;
@@ -162,6 +193,7 @@ rotary_event_t controls_get_rotary_event(void)
     if (rotary_button_pressed)
     {
         rotary_button_pressed = false;
+        ESP_LOGI(TAG, "Rotary button pushed");
         return ROTARY_PUSH;
     }
 
@@ -169,11 +201,13 @@ rotary_event_t controls_get_rotary_event(void)
     if (current_counter > last_counter)
     {
         last_counter = current_counter;
+        ESP_LOGI(TAG, "Rotary CW (counter: %d)", current_counter);
         return ROTARY_CW;
     }
     else if (current_counter < last_counter)
     {
         last_counter = current_counter;
+        ESP_LOGI(TAG, "Rotary CCW (counter: %d)", current_counter);
         return ROTARY_CCW;
     }
 

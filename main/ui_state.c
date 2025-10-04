@@ -156,11 +156,20 @@ ui_event_t ui_get_event(void)
     rotary_event_t rotary = controls_get_rotary_event();
     bool is_press_closed = controls_is_press_closed();
 
-    // Button events
-    if (button == BUTTON_CONFIRM)
+    // Debug: log what we received
+    if (button != BUTTON_NONE || rotary != ROTARY_NONE) {
+        ESP_LOGI(TAG, "Events received - button: %d, rotary: %d", button, rotary);
+    }
+
+    // Button events (check these FIRST - they're more important than rotary)
+    if (button == BUTTON_CONFIRM) {
+        ESP_LOGI(TAG, "UI Event: BUTTON_CONFIRM");
         return UI_EVENT_BUTTON_CONFIRM;
-    if (button == BUTTON_BACK)
+    }
+    if (button == BUTTON_BACK) {
+        ESP_LOGI(TAG, "UI Event: BUTTON_BACK");
         return UI_EVENT_BUTTON_BACK;
+    }
 
     // Rotary events
     if (rotary == ROTARY_CW)
@@ -256,16 +265,20 @@ static void handle_main_menu_state(ui_event_t event)
     {
     case UI_EVENT_ROTARY_CW:
         menu_selected_item = MENU_WRAP(menu_selected_item + 1, MENU_COUNT);
+        ESP_LOGI(TAG, "Menu item selected: %d", menu_selected_item);
         break;
 
     case UI_EVENT_ROTARY_CCW:
         menu_selected_item = MENU_WRAP(menu_selected_item - 1, MENU_COUNT);
+        ESP_LOGI(TAG, "Menu item selected: %d", menu_selected_item);
         break;
 
     case UI_EVENT_BUTTON_CONFIRM:
+        ESP_LOGI(TAG, "Confirm pressed, entering menu item: %d", menu_selected_item);
         switch (menu_selected_item)
         {
         case MENU_JOB_SETUP:
+            ESP_LOGI(TAG, "Entering JOB_SETUP state");
             ui_current_state = UI_STATE_JOB_SETUP;
             job_setup_selected_index = 0;
             break;

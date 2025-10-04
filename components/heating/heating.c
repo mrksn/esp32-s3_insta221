@@ -31,7 +31,7 @@ static const char *TAG = "heating";
 #define LEDC_CHANNEL LEDC_CHANNEL_0
 #define LEDC_DUTY_RES LEDC_TIMER_10_BIT ///< 10-bit resolution (0-1023)
 #define LEDC_FREQUENCY 1000             ///< 1 kHz PWM frequency
-#define SSR_PIN GPIO_NUM_18             ///< GPIO pin connected to SSR
+#define SSR_PIN GPIO_NUM_2              ///< GPIO pin connected to SSR
 
 // PID Controller Instance
 static pid_controller_t g_pid_controller;

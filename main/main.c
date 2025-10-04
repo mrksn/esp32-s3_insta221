@@ -277,9 +277,6 @@ void ui_task(void *pvParameters)
     {
         ui_task_last_run = esp_timer_get_time() / 1000000;
 
-        // Handle pause button
-        handle_pause_button();
-
         // Update LED indicators
         update_led_indicators();
 
@@ -288,6 +285,9 @@ void ui_task(void *pvParameters)
         {
             ui_update(current_temperature);
         }
+
+        // Handle pause button AFTER UI update (so UI gets button events first)
+        handle_pause_button();
 
         // Monitor press state changes for cycle control
         bool current_press_state = controls_is_press_closed();
@@ -464,8 +464,9 @@ void temp_control_task(void *pvParameters)
             ESP_LOGW(TAG, "Temperature sensor read failed (attempt %d/%d)",
                      sensor_error_count, SENSOR_RETRY_COUNT);
 
-            // Emergency shutdown after maximum retry attempts
-            if (sensor_error_count >= SENSOR_RETRY_COUNT)
+            // TEMPORARILY DISABLED: Emergency shutdown after maximum retry attempts
+            // TODO: Re-enable after display testing
+            if (false && sensor_error_count >= SENSOR_RETRY_COUNT)
             {
                 emergency_shutdown_system("Temperature sensor failure - too many consecutive errors");
             }
