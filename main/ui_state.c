@@ -677,7 +677,6 @@ static void render_pressing_active(void)
     static cycle_status_t last_stage = IDLE;
     static bool screen_initialized = false;
 
-    char buffer[32];
     uint32_t current_time = esp_timer_get_time() / 1000000;  // Convert to seconds
     uint32_t stage_elapsed = current_time - stage_start_time;
     uint32_t stage_duration = (current_stage == STAGE1) ?
@@ -703,17 +702,41 @@ static void render_pressing_active(void)
             return;  // Don't show countdown when waiting
         }
 
+        // Draw stage label at top
         display_text(0, 0, (current_stage == STAGE1) ? "Stage 1" : "Stage 2");
-        display_text(0, 2, "Keep press closed");
         screen_initialized = true;
         last_stage = current_stage;
+        last_time_remaining = 9999; // Force update
     }
 
-    // Update only the countdown number (line 1) when time changes
+    // Update countdown and progress bar when time changes
     if (time_remaining != last_time_remaining && current_stage != IDLE)
     {
-        sprintf(buffer, "   %lu sec   ", time_remaining);  // Extra spaces to clear previous digits
-        display_text(0, 1, buffer);
+        // Clear the countdown area (center of screen for numbers and message area)
+        for (uint8_t i = 30; i < 100; i++) {
+            for (uint8_t j = 15; j < 48; j++) {
+                display_set_pixel(i, j, false);  // Clear pixels
+            }
+        }
+
+        // Show completion message when done or draw countdown
+        if (time_remaining == 0 && current_stage == STAGE2)
+        {
+            display_text(0, 2, "Open to complete");
+        }
+        else
+        {
+            // Draw large countdown number in center
+            display_large_number(40, 16, time_remaining > 99 ? 99 : (uint8_t)time_remaining);
+        }
+
+        // Calculate progress (inverted - starts at 100% and goes to 0%)
+        uint8_t progress = (stage_duration > 0) ?
+                          ((stage_duration - time_remaining) * 100) / stage_duration : 100;
+
+        // Draw progress bar at bottom
+        display_draw_progress_bar(10, 50, 108, 10, progress);
+
         display_flush();
         last_time_remaining = time_remaining;
     }

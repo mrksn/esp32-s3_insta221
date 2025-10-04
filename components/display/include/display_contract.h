@@ -30,4 +30,10 @@ void display_status(float current_temp, float target_temp, const char *status);
 // Signal completion
 void display_done(void);
 
+// New functions for enhanced countdown display
+void display_set_pixel(uint8_t x, uint8_t y, bool on);
+void display_draw_rect(uint8_t x, uint8_t y, uint8_t width, uint8_t height, bool filled);
+void display_draw_progress_bar(uint8_t x, uint8_t y, uint8_t width, uint8_t height, uint8_t progress);
+void display_large_number(uint8_t x, uint8_t y, uint8_t number);
+
 #endif // DISPLAY_CONTRACT_H

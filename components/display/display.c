@@ -333,3 +333,91 @@ void display_done(void)
 
     // display_update() is already called by display_text(), so no need to call it again
 }
+
+// Set a single pixel on/off
+void display_set_pixel(uint8_t x, uint8_t y, bool on)
+{
+    if (x >= SH1106_WIDTH || y >= SH1106_HEIGHT) return;
+
+    uint8_t page = y / 8;
+    uint8_t bit = y % 8;
+    uint16_t index = page * SH1106_WIDTH + x;
+
+    if (on) {
+        display_buffer[index] |= (1 << bit);
+    } else {
+        display_buffer[index] &= ~(1 << bit);
+    }
+}
+
+// Draw a rectangle
+void display_draw_rect(uint8_t x, uint8_t y, uint8_t width, uint8_t height, bool filled)
+{
+    if (filled) {
+        for (uint8_t i = 0; i < width; i++) {
+            for (uint8_t j = 0; j < height; j++) {
+                display_set_pixel(x + i, y + j, true);
+            }
+        }
+    } else {
+        // Draw outline
+        for (uint8_t i = 0; i < width; i++) {
+            display_set_pixel(x + i, y, true);
+            display_set_pixel(x + i, y + height - 1, true);
+        }
+        for (uint8_t j = 0; j < height; j++) {
+            display_set_pixel(x, y + j, true);
+            display_set_pixel(x + width - 1, y + j, true);
+        }
+    }
+}
+
+// Draw a progress bar
+void display_draw_progress_bar(uint8_t x, uint8_t y, uint8_t width, uint8_t height, uint8_t progress)
+{
+    // Draw outline
+    display_draw_rect(x, y, width, height, false);
+
+    // Draw filled portion based on progress (0-100)
+    uint8_t filled_width = ((width - 2) * progress) / 100;
+    if (filled_width > 0) {
+        display_draw_rect(x + 1, y + 1, filled_width, height - 2, true);
+    }
+}
+
+// Display a large number (0-99)
+void display_large_number(uint8_t x, uint8_t y, uint8_t number)
+{
+    (void)number; // Suppress unused warning
+
+    // For simplicity, use scaled-up regular font
+    char buf[4];
+    snprintf(buf, sizeof(buf), "%2d", number);
+
+    // Draw larger characters by setting multiple pixels
+    for (int i = 0; buf[i] != '\0'; i++) {
+        char c = buf[i];
+        if (c == ' ') {
+            x += 16;
+            continue;
+        }
+
+        int idx = c - 32;
+        if (idx < 96) {
+            for (int col = 0; col < 5; col++) {
+                uint8_t line = font5x8[idx][col];
+                for (int bit = 0; bit < 8; bit++) {
+                    if (line & (1 << bit)) {
+                        // Scale 3x
+                        for (int sx = 0; sx < 3; sx++) {
+                            for (int sy = 0; sy < 3; sy++) {
+                                display_set_pixel(x + col * 3 + sx, y + bit * 3 + sy, true);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        x += 16; // Character spacing
+    }
+}
