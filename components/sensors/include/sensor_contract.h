@@ -16,4 +16,8 @@ bool sensor_read_temperature(float *temperature);
 // Check if sensor is operational
 bool sensor_is_operational(void);
 
+// Simulation mode functions
+bool sensor_is_simulation_mode(void);
+void sensor_sim_set_heating_power(float power_percent);
+
 #endif // SENSOR_CONTRACT_H

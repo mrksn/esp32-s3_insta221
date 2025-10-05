@@ -14,6 +14,7 @@
 #define SYSTEM_CONFIG_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 // =============================================================================
 // Configuration Structure
@@ -30,7 +31,7 @@ typedef struct
     // Safety limits
     struct
     {
-        float max_temperature_celsius;  ///< Maximum safe temperature (°C)
+        float max_temperature_celsius;   ///< Maximum safe temperature (°C)
         uint32_t max_cycle_time_seconds; ///< Maximum pressing cycle time (s)
         uint32_t heap_minimum_bytes;     ///< Minimum free heap memory (bytes)
     } safety;
@@ -47,24 +48,24 @@ typedef struct
     // Temperature thresholds
     struct
     {
-        float hysteresis_celsius;          ///< Temperature hysteresis for control (°C)
-        float pressing_max_offset_celsius; ///< Max temp offset during pressing (°C)
+        float hysteresis_celsius;             ///< Temperature hysteresis for control (°C)
+        float pressing_max_offset_celsius;    ///< Max temp offset during pressing (°C)
         float cycle_start_max_offset_celsius; ///< Max temp offset for cycle start (°C)
-        float cycle_start_min_celsius;     ///< Minimum temperature for cycle start (°C)
-        float recovery_offset_celsius;     ///< Temperature offset for error recovery (°C)
+        float cycle_start_min_celsius;        ///< Minimum temperature for cycle start (°C)
+        float recovery_offset_celsius;        ///< Temperature offset for error recovery (°C)
     } temperature;
 
     // Sensor retry configuration
     struct
     {
-        uint8_t retry_count;           ///< Number of sensor read retry attempts
-        uint32_t retry_delay_ms;       ///< Delay between retry attempts (ms)
+        uint8_t retry_count;     ///< Number of sensor read retry attempts
+        uint32_t retry_delay_ms; ///< Delay between retry attempts (ms)
     } sensor;
 
     // Simulation mode configuration
     struct
     {
-        bool enabled;                  ///< Enable simulation mode (true = simulated, false = real hardware)
+        bool enabled; ///< Enable simulation mode (true = simulated, false = real hardware)
     } simulation;
 } system_config_t;
 
@@ -76,35 +77,11 @@ typedef struct
  * @brief Global system configuration
  *
  * This constant structure contains all system configuration values.
- * Modify these values to tune system behavior.
+ * Modify the values in system_config.c to tune system behavior.
+ *
+ * IMPORTANT: To enable/disable simulation mode, edit system_config.c
  */
-static const system_config_t SYSTEM_CONFIG = {
-    .safety = {
-        .max_temperature_celsius = 220.0f,
-        .max_cycle_time_seconds = 300,
-        .heap_minimum_bytes = 8192,
-    },
-    .timing = {
-        .ui_task_timeout_sec = 1,
-        .temp_task_timeout_sec = 3,
-        .sensor_timeout_sec = 30,
-        .sensor_validation_timeout_sec = 10,
-    },
-    .temperature = {
-        .hysteresis_celsius = 5.0f,
-        .pressing_max_offset_celsius = 20.0f,
-        .cycle_start_max_offset_celsius = 30.0f,
-        .cycle_start_min_celsius = 20.0f,
-        .recovery_offset_celsius = 10.0f,
-    },
-    .sensor = {
-        .retry_count = 3,
-        .retry_delay_ms = 500,
-    },
-    .simulation = {
-        .enabled = false,  ///< Set to true to enable simulation mode for SSR testing
-    },
-};
+extern const system_config_t SYSTEM_CONFIG;
 
 // =============================================================================
 // UI Configuration Constants

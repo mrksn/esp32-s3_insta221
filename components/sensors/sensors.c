@@ -48,8 +48,18 @@ static float sim_heating_power = 0.0f;      ///< Current heating power (0-100%)
 // Thermal model parameters
 #define SIM_THERMAL_MASS 2200.0f        ///< Thermal mass (J/°C) - represents heat capacity of the plate
 #define SIM_HEATING_POWER_MAX 2200.0f   ///< Maximum heating power (W) - 2200W heating element
-#define SIM_HEAT_LOSS_COEFF 15.0f       ///< Heat loss coefficient (W/°C) - convection + radiation
+#define SIM_HEAT_LOSS_COEFF 5.0f        ///< Heat loss coefficient (W/°C) - simplified for simulation demonstration
 #define SIM_UPDATE_INTERVAL_MS 100      ///< Simulation update interval (ms)
+
+/**
+ * @brief Check if simulation mode is enabled
+ *
+ * @return true if simulation mode is enabled, false otherwise
+ */
+bool sensor_is_simulation_mode(void)
+{
+    return SYSTEM_CONFIG.simulation.enabled;
+}
 
 /**
  * @brief Update heating power for simulation
@@ -62,7 +72,7 @@ static float sim_heating_power = 0.0f;      ///< Current heating power (0-100%)
 void sensor_sim_set_heating_power(float power_percent)
 {
     sim_heating_power = CLAMP(power_percent, 0.0f, 100.0f);
-    ESP_LOGD(TAG, "Simulation: Heating power set to %.1f%%", sim_heating_power);
+    ESP_LOGI(TAG, "Simulation: Heating power set to %.1f%%", sim_heating_power);
 }
 
 /**
@@ -217,7 +227,7 @@ bool sensor_read_temperature(float *temperature)
 
         // Return simulated temperature
         *temperature = sim_current_temp;
-        ESP_LOGD(TAG, "Simulation temperature: %.2f°C (power: %.1f%%)",
+        ESP_LOGI(TAG, "Simulation temperature: %.2f°C (power: %.1f%%)",
                  *temperature, sim_heating_power);
         return true;
     }

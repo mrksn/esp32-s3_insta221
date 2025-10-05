@@ -20,14 +20,12 @@
 #include "pid_controller.h"
 #include "system_config.h"
 #include "controls_contract.h"
+#include "sensor_contract.h"
 #include "esp_log.h"
 #include "driver/ledc.h"
 #include "esp_timer.h"
 
 static const char *TAG = "heating";
-
-// External function from sensors.c for simulation
-extern void sensor_sim_set_heating_power(float power_percent);
 
 // LEDC PWM Configuration
 #define LEDC_TIMER LEDC_TIMER_0
@@ -122,7 +120,7 @@ void heating_set_power(uint8_t power_percent)
     ledc_update_duty(LEDC_MODE, LEDC_CHANNEL);
 
     // Update simulation model if in simulation mode
-    if (SYSTEM_CONFIG.simulation.enabled)
+    if (sensor_is_simulation_mode())
     {
         sensor_sim_set_heating_power((float)power_percent);
     }

@@ -520,18 +520,38 @@ void temp_control_task(void *pvParameters)
                 // Normal operation: update pressing cycle timing
                 update_pressing_cycle();
 
-                // Control heating only when pressing is active, not paused, and all safety checks pass
-                if (pressing_active && !press_safety_locked && check_system_safety() && !pause_mode)
+                // Check if we're in Heat Up mode
+                ui_state_t current_ui_state = ui_get_current_state();
+                bool in_heat_up_mode = (current_ui_state == UI_STATE_HEAT_UP);
+
+                // Control heating when:
+                // 1. Pressing is active, not paused, and safety checks pass, OR
+                // 2. In Heat Up mode and safety checks pass
+                if ((pressing_active && !press_safety_locked && check_system_safety() && !pause_mode) ||
+                    (in_heat_up_mode && check_system_safety()))
                 {
                     // Update PID controller with current temperature
                     float output = pid_update(current_temperature);
 
-                    // Apply hysteresis control
-                    control_heating_with_hysteresis(output);
+                    ESP_LOGI(TAG, "Heat Up: PID output=%.1f%%, pressing=%d, heat_up=%d",
+                             output, pressing_active, in_heat_up_mode);
+
+                    // In Heat Up mode, apply PID directly without hysteresis
+                    // During pressing, use hysteresis for stability
+                    if (in_heat_up_mode)
+                    {
+                        heating_set_power((uint8_t)output);
+                    }
+                    else
+                    {
+                        control_heating_with_hysteresis(output);
+                    }
                 }
                 else
                 {
-                    // No heating when not pressing, paused, or when safety systems are engaged
+                    // No heating when not pressing, not in heat up, paused, or when safety systems are engaged
+                    ESP_LOGD(TAG, "Heating off: pressing=%d, locked=%d, safety=%d, pause=%d, heat_up=%d",
+                             pressing_active, press_safety_locked, check_system_safety(), pause_mode, in_heat_up_mode);
                     heating_set_power(0);
                 }
             }
@@ -1190,13 +1210,15 @@ void handle_pause_button(void)
  */
 void control_heating_with_hysteresis(float pid_output)
 {
-    if (heating_was_on && current_temperature < (settings.target_temp - TEMP_HYSTERESIS))
-    {
-        heating_was_on = false;
-    }
-    else if (!heating_was_on && current_temperature > (settings.target_temp + TEMP_HYSTERESIS))
+    // Turn heating ON when temperature is below (target - hysteresis)
+    if (!heating_was_on && current_temperature < (settings.target_temp - TEMP_HYSTERESIS))
     {
         heating_was_on = true;
+    }
+    // Turn heating OFF when temperature is above (target + hysteresis)
+    else if (heating_was_on && current_temperature > (settings.target_temp + TEMP_HYSTERESIS))
+    {
+        heating_was_on = false;
     }
 
     // Set heating power based on PID output and hysteresis state
