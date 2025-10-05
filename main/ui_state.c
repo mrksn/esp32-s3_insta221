@@ -828,7 +828,39 @@ static void render_main_menu(void)
 
 static void render_job_setup(void)
 {
-    display_menu(job_setup_items, JOB_SETUP_ITEM_COUNT, job_setup_selected_index);
+    char line[21];
+
+    display_clear();
+
+    for (uint8_t i = 0; i < JOB_SETUP_ITEM_COUNT; i++)
+    {
+        if (i == JOB_ITEM_NUM_SHIRTS)
+        {
+            if (i == job_setup_selected_index)
+            {
+                snprintf(line, sizeof(line), "> %-11s %4d", job_setup_items[i], current_run->num_shirts);
+            }
+            else
+            {
+                snprintf(line, sizeof(line), "  %-11s %4d", job_setup_items[i], current_run->num_shirts);
+            }
+        }
+        else // JOB_ITEM_PRINT_TYPE
+        {
+            const char *type_str = (current_run->type == SINGLE_SIDED) ? "Sing" : "Doub";
+            if (i == job_setup_selected_index)
+            {
+                snprintf(line, sizeof(line), "> %-11s %4s", job_setup_items[i], type_str);
+            }
+            else
+            {
+                snprintf(line, sizeof(line), "  %-11s %4s", job_setup_items[i], type_str);
+            }
+        }
+        display_text(0, i * 2, line);
+    }
+
+    display_flush();
 }
 
 static void render_job_setup_adjust(void)
@@ -841,7 +873,7 @@ static void render_job_setup_adjust(void)
 
     if (job_setup_selected_index == JOB_ITEM_NUM_SHIRTS)
     {
-        sprintf(buffer, "> %d <", current_run->num_shirts);
+        sprintf(buffer, ">> %d <<", current_run->num_shirts);
         display_text(0, 2, buffer);
     }
     display_flush();
@@ -859,7 +891,26 @@ static void render_settings_menu(void)
 
 static void render_timers_menu(void)
 {
-    display_menu(timer_menu_items, TIMER_COUNT, timer_selected_index);
+    char line[21];
+
+    display_clear();
+
+    for (uint8_t i = 0; i < TIMER_COUNT; i++)
+    {
+        int value = (i == TIMER_STAGE1) ? current_settings->stage1_default : current_settings->stage2_default;
+
+        if (i == timer_selected_index)
+        {
+            snprintf(line, sizeof(line), "> %-10s %4ds", timer_menu_items[i], value);
+        }
+        else
+        {
+            snprintf(line, sizeof(line), "  %-10s %4ds", timer_menu_items[i], value);
+        }
+        display_text(0, i * 2, line);
+    }
+
+    display_flush();
 }
 
 static void render_timer_adjust(void)
@@ -872,11 +923,11 @@ static void render_timer_adjust(void)
 
     if (timer_selected_index == TIMER_STAGE1)
     {
-        sprintf(buffer, "> %d s <", current_settings->stage1_default);
+        sprintf(buffer, ">> %d s <<", current_settings->stage1_default);
     }
     else
     {
-        sprintf(buffer, "> %d s <", current_settings->stage2_default);
+        sprintf(buffer, ">> %d s <<", current_settings->stage2_default);
     }
     display_text(0, 2, buffer);
     display_flush();
@@ -884,7 +935,38 @@ static void render_timer_adjust(void)
 
 static void render_temperature_menu(void)
 {
-    display_menu(temp_menu_items, TEMP_COUNT, temp_selected_index);
+    char line[21];
+
+    display_clear();
+
+    for (uint8_t i = 0; i < TEMP_COUNT; i++)
+    {
+        if (i == TEMP_TARGET_TEMP)
+        {
+            if (i == temp_selected_index)
+            {
+                snprintf(line, sizeof(line), "> %-9s %5.1fC", temp_menu_items[i], current_settings->target_temp);
+            }
+            else
+            {
+                snprintf(line, sizeof(line), "  %-9s %5.1fC", temp_menu_items[i], current_settings->target_temp);
+            }
+        }
+        else // TEMP_PID_CONTROL
+        {
+            if (i == temp_selected_index)
+            {
+                snprintf(line, sizeof(line), "> %s", temp_menu_items[i]);
+            }
+            else
+            {
+                snprintf(line, sizeof(line), "  %s", temp_menu_items[i]);
+            }
+        }
+        display_text(0, i * 2, line);
+    }
+
+    display_flush();
 }
 
 static void render_temp_adjust(void)
@@ -894,14 +976,68 @@ static void render_temp_adjust(void)
     display_clear();
     display_text(0, 0, "Adjust:");
     display_text(0, 1, "Target Temp");
-    sprintf(buffer, "> %.1f C <", current_settings->target_temp);
+    sprintf(buffer, ">> %.1f C <<", current_settings->target_temp);
     display_text(0, 2, buffer);
     display_flush();
 }
 
 static void render_pid_menu(void)
 {
-    display_menu(pid_menu_items, PID_COUNT, pid_selected_index);
+    char line[21];
+
+    display_clear();
+
+    for (uint8_t i = 0; i < PID_COUNT; i++)
+    {
+        if (i == PID_AUTOTUNE)
+        {
+            // Auto-Tune doesn't have a value to display
+            if (i == pid_selected_index)
+            {
+                snprintf(line, sizeof(line), "> %s", pid_menu_items[i]);
+            }
+            else
+            {
+                snprintf(line, sizeof(line), "  %s", pid_menu_items[i]);
+            }
+        }
+        else if (i == PID_KP)
+        {
+            if (i == pid_selected_index)
+            {
+                snprintf(line, sizeof(line), "> %-10s %5.2f", pid_menu_items[i], current_settings->pid_kp);
+            }
+            else
+            {
+                snprintf(line, sizeof(line), "  %-10s %5.2f", pid_menu_items[i], current_settings->pid_kp);
+            }
+        }
+        else if (i == PID_KI)
+        {
+            if (i == pid_selected_index)
+            {
+                snprintf(line, sizeof(line), "> %-10s %5.3f", pid_menu_items[i], current_settings->pid_ki);
+            }
+            else
+            {
+                snprintf(line, sizeof(line), "  %-10s %5.3f", pid_menu_items[i], current_settings->pid_ki);
+            }
+        }
+        else // PID_KD
+        {
+            if (i == pid_selected_index)
+            {
+                snprintf(line, sizeof(line), "> %-10s %5.2f", pid_menu_items[i], current_settings->pid_kd);
+            }
+            else
+            {
+                snprintf(line, sizeof(line), "  %-10s %5.2f", pid_menu_items[i], current_settings->pid_kd);
+            }
+        }
+        display_text(0, i * 2, line);
+    }
+
+    display_flush();
 }
 
 static void render_pid_adjust(void)
@@ -914,15 +1050,15 @@ static void render_pid_adjust(void)
 
     if (pid_selected_index == PID_KP)
     {
-        sprintf(buffer, "> %.2f <", current_settings->pid_kp);
+        sprintf(buffer, ">> %.2f <<", current_settings->pid_kp);
     }
     else if (pid_selected_index == PID_KI)
     {
-        sprintf(buffer, "> %.3f <", current_settings->pid_ki);
+        sprintf(buffer, ">> %.3f <<", current_settings->pid_ki);
     }
     else if (pid_selected_index == PID_KD)
     {
-        sprintf(buffer, "> %.2f <", current_settings->pid_kd);
+        sprintf(buffer, ">> %.2f <<", current_settings->pid_kd);
     }
     display_text(0, 2, buffer);
     display_flush();
