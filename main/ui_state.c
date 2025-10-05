@@ -172,6 +172,7 @@ extern uint8_t get_autotune_progress(void);
 // State Handler Function Prototypes
 // =============================================================================
 
+static void handle_startup_state(ui_event_t event);        // NEW
 static void handle_main_menu_state(ui_event_t event);
 static void handle_job_setup_state(ui_event_t event);
 static void handle_job_setup_adjust_state(ui_event_t event);
@@ -201,6 +202,7 @@ static void handle_autotune_complete_state(ui_event_t event);  // NEW
 static void handle_reset_stats_state(ui_event_t event);        // NEW
 
 // Display rendering functions
+static void render_startup(void);              // NEW
 static void render_main_menu(void);
 static void render_job_setup(void);
 static void render_job_setup_adjust(void);
@@ -242,6 +244,7 @@ typedef struct
 } state_handler_entry_t;
 
 static const state_handler_entry_t state_handlers[] = {
+    {UI_STATE_STARTUP, handle_startup_state, render_startup, "Startup"},
     {UI_STATE_MAIN_MENU, handle_main_menu_state, render_main_menu, "Main Menu"},
     {UI_STATE_JOB_SETUP, handle_job_setup_state, render_job_setup, "Job Setup"},
     {UI_STATE_JOB_SETUP_ADJUST, handle_job_setup_adjust_state, render_job_setup_adjust, "Adjust Job Setup"},
@@ -279,8 +282,8 @@ void ui_init(settings_t *settings, print_run_t *print_run)
 {
     current_settings = settings;
     current_run = print_run;
-    ui_current_state = UI_STATE_MAIN_MENU;
-    ESP_LOGI(TAG, "UI state machine initialized");
+    ui_current_state = UI_STATE_STARTUP; // Start with startup screen
+    ESP_LOGI(TAG, "UI state machine initialized - showing startup screen");
 }
 
 void ui_update(float current_temp)
@@ -480,6 +483,13 @@ void ui_adjust_value(int8_t delta)
 // =============================================================================
 // State Handler Implementations
 // =============================================================================
+
+static void handle_startup_state(ui_event_t event)
+{
+    // Startup screen doesn't handle any events
+    // It will automatically transition to main menu after 3 seconds (handled in main.c)
+    (void)event; // Suppress unused parameter warning
+}
 
 static void handle_main_menu_state(ui_event_t event)
 {
@@ -1425,6 +1435,19 @@ static void handle_stats_kpis_state(ui_event_t event)
 // =============================================================================
 // Display Rendering Implementations
 // =============================================================================
+
+static void render_startup(void)
+{
+    display_clear();
+
+    // Display "DINfabrik" in normal text, centered
+    display_text(0, 1, "    DINfabrik");
+
+    // Display "initialising system" below (line 3)
+    display_text(0, 3, "initialising...");
+
+    display_flush();
+}
 
 static void render_main_menu(void)
 {

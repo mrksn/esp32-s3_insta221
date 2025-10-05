@@ -9,6 +9,7 @@
 typedef enum
 {
     UI_STATE_INIT,
+    UI_STATE_STARTUP,            // NEW: Startup splash screen
     UI_STATE_MAIN_MENU,
     UI_STATE_JOB_SETUP,
     UI_STATE_JOB_SETUP_ADJUST,   // Adjusting a job setup value

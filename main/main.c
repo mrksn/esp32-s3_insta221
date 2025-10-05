@@ -307,6 +307,27 @@ void ui_task(void *pvParameters)
         uint32_t current_time = esp_timer_get_time() / 1000000;
         ui_state_t current_ui_state = ui_get_current_state();
 
+        // Handle startup screen timeout (3 seconds)
+        static uint32_t startup_screen_time = 0;
+        if (current_ui_state == UI_STATE_STARTUP)
+        {
+            if (startup_screen_time == 0)
+            {
+                startup_screen_time = current_time;
+            }
+            else if ((current_time - startup_screen_time) >= 3)
+            {
+                // Transition to main menu after 3 seconds
+                ui_set_state(UI_STATE_MAIN_MENU);
+                ESP_LOGI(TAG, "Startup screen timeout - transitioning to main menu");
+            }
+        }
+        else if (startup_screen_time != 0)
+        {
+            // Reset timer if we leave startup state
+            startup_screen_time = 0;
+        }
+
         // Monitor press state changes for cycle control
         bool current_press_state = controls_is_press_closed();
 
