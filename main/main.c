@@ -522,6 +522,7 @@ void temp_control_task(void *pvParameters)
         {
             // Sensor read failed - implement retry and escalation strategy
             sensor_error_count++;
+            statistics.sensor_failures++;
             ESP_LOGW(TAG, "Temperature sensor read failed (attempt %d/%d)",
                      sensor_error_count, SENSOR_RETRY_COUNT);
 
@@ -568,6 +569,10 @@ void init_defaults(void)
 
     // Reset run timing
     run_start_time = 0;
+
+    // Initialize statistics to zero
+    memset(&statistics, 0, sizeof(statistics_t));
+    statistics.session_start_time = esp_timer_get_time() / 1000000;
 }
 
 void load_persistent_data(void)
@@ -757,6 +762,17 @@ void complete_pressing_cycle(void)
         // Update cycle completion
         current_cycle.status = COMPLETE;
 
+        // Update statistics - total presses
+        statistics.total_presses++;
+        statistics.presses_since_pid_tune++;
+
+        // Track temperature stability
+        float temp_error = current_temperature - settings.target_temp;
+        if (temp_error >= -5.0f && temp_error <= 5.0f)
+        {
+            statistics.presses_in_tolerance++;
+        }
+
         // Check if we're in free press mode
         if (ui_is_free_press_mode())
         {
@@ -890,6 +906,9 @@ void emergency_shutdown_system(const char *reason)
 
     emergency_shutdown = true;
     system_healthy = false;
+
+    // Track emergency stop
+    statistics.emergency_stops++;
 
     ESP_LOGE(TAG, "EMERGENCY SHUTDOWN: %s", reason);
 
@@ -1085,7 +1104,14 @@ void update_led_indicators(void)
         uint32_t current_time = esp_timer_get_time() / 1000000;
         time_to_target_temp = current_time - system_start_time;
         target_temp_reached = true;
-        ESP_LOGI(TAG, "Target temperature reached in %lu seconds", time_to_target_temp);
+
+        // Update warmup statistics
+        statistics.total_warmup_time += time_to_target_temp;
+        statistics.warmup_count++;
+        statistics.avg_warmup_time = (float)statistics.total_warmup_time / statistics.warmup_count;
+
+        ESP_LOGI(TAG, "Target temperature reached in %lu seconds (avg: %.1fs)",
+                 time_to_target_temp, statistics.avg_warmup_time);
     }
 
     // Blue LED: System is in pause mode

@@ -105,6 +105,9 @@ static float temperature_display_celsius = 0.0f;
 // External variables for heat-up time tracking (DEBUG - for PID tuning)
 extern uint32_t time_to_target_temp;
 
+// External statistics tracking
+extern statistics_t statistics;
+
 // Job setup state
 static int job_setup_selected_index = 0;
 static bool job_setup_edit_mode = false;
@@ -177,6 +180,10 @@ static void handle_free_press_state(ui_event_t event);         // NEW
 static void handle_profiles_menu_state(ui_event_t event);      // NEW
 static void handle_pressing_active_state(ui_event_t event);
 static void handle_statistics_state(ui_event_t event);
+static void handle_stats_production_state(ui_event_t event);   // NEW
+static void handle_stats_temperature_state(ui_event_t event);  // NEW
+static void handle_stats_events_state(ui_event_t event);       // NEW
+static void handle_stats_kpis_state(ui_event_t event);         // NEW
 static void handle_autotune_state(ui_event_t event);           // NEW
 static void handle_autotune_complete_state(ui_event_t event);  // NEW
 
@@ -197,6 +204,10 @@ static void render_free_press(void);          // NEW
 static void render_profiles_menu(void);       // NEW
 static void render_pressing_active(void);
 static void render_statistics(void);
+static void render_stats_production(void);   // NEW
+static void render_stats_temperature(void);  // NEW
+static void render_stats_events(void);       // NEW
+static void render_stats_kpis(void);         // NEW
 static void render_autotune(void);           // NEW
 static void render_autotune_complete(void);  // NEW
 static void render_stage1_done(void);        // NEW
@@ -237,6 +248,10 @@ static const state_handler_entry_t state_handlers[] = {
     {UI_STATE_STAGE2_DONE, NULL, render_stage2_done, "Stage 2 Done"},
     {UI_STATE_CYCLE_COMPLETE, NULL, render_cycle_complete, "Cycle Complete"},
     {UI_STATE_STATISTICS, handle_statistics_state, render_statistics, "Statistics"},
+    {UI_STATE_STATS_PRODUCTION, handle_stats_production_state, render_stats_production, "Production Stats"},
+    {UI_STATE_STATS_TEMPERATURE, handle_stats_temperature_state, render_stats_temperature, "Temperature Stats"},
+    {UI_STATE_STATS_EVENTS, handle_stats_events_state, render_stats_events, "Events Stats"},
+    {UI_STATE_STATS_KPIS, handle_stats_kpis_state, render_stats_kpis, "KPI Stats"},
     {UI_STATE_AUTOTUNE, handle_autotune_state, render_autotune, "Auto-Tune"},
     {UI_STATE_AUTOTUNE_COMPLETE, handle_autotune_complete_state, render_autotune_complete, "Results"},
 };
@@ -1279,6 +1294,38 @@ static void handle_statistics_state(ui_event_t event)
     }
 }
 
+static void handle_stats_production_state(ui_event_t event)
+{
+    if (event == UI_EVENT_BUTTON_BACK)
+    {
+        ui_current_state = UI_STATE_STATISTICS;
+    }
+}
+
+static void handle_stats_temperature_state(ui_event_t event)
+{
+    if (event == UI_EVENT_BUTTON_BACK)
+    {
+        ui_current_state = UI_STATE_STATISTICS;
+    }
+}
+
+static void handle_stats_events_state(ui_event_t event)
+{
+    if (event == UI_EVENT_BUTTON_BACK)
+    {
+        ui_current_state = UI_STATE_STATISTICS;
+    }
+}
+
+static void handle_stats_kpis_state(ui_event_t event)
+{
+    if (event == UI_EVENT_BUTTON_BACK)
+    {
+        ui_current_state = UI_STATE_STATISTICS;
+    }
+}
+
 // =============================================================================
 // Display Rendering Implementations
 // =============================================================================
@@ -1713,6 +1760,118 @@ static void render_statistics(void)
 {
     // Show statistics submenu
     display_menu(stats_menu_items, STATS_COUNT, stats_selected_index);
+}
+
+static void render_stats_production(void)
+{
+    char buffer[32];
+    display_clear();
+
+    display_text(0, 0, "== Production ==");
+
+    // Total presses
+    sprintf(buffer, "Total: %lu", statistics.total_presses);
+    display_text(0, 1, buffer);
+
+    // Operating time (hours:minutes)
+    uint32_t hours = statistics.total_operating_time / 3600;
+    uint32_t mins = (statistics.total_operating_time % 3600) / 60;
+    sprintf(buffer, "Time: %luh %lum", hours, mins);
+    display_text(0, 2, buffer);
+
+    // Idle time ratio
+    if (statistics.total_operating_time > 0)
+    {
+        uint32_t idle_pct = (statistics.total_idle_time * 100) / statistics.total_operating_time;
+        sprintf(buffer, "Idle: %lu%%", idle_pct);
+        display_text(0, 3, buffer);
+    }
+
+    display_flush();
+}
+
+static void render_stats_temperature(void)
+{
+    char buffer[32];
+    display_clear();
+
+    display_text(0, 0, "== Temperature ==");
+
+    // Current vs target
+    sprintf(buffer, "Now: %.1f/%.1fC",
+            temperature_display_celsius,
+            current_settings->target_temp);
+    display_text(0, 1, buffer);
+
+    // Average warmup time
+    if (statistics.warmup_count > 0)
+    {
+        sprintf(buffer, "Warmup: %.0fs", statistics.avg_warmup_time);
+        display_text(0, 2, buffer);
+    }
+
+    // Presses since PID tune
+    sprintf(buffer, "Since tune: %u", statistics.presses_since_pid_tune);
+    display_text(0, 3, buffer);
+
+    display_flush();
+}
+
+static void render_stats_events(void)
+{
+    char buffer[32];
+    display_clear();
+
+    display_text(0, 0, "=== Events ===");
+
+    // Aborted cycles
+    sprintf(buffer, "Aborted: %u", statistics.aborted_cycles);
+    display_text(0, 1, buffer);
+
+    // Errors
+    sprintf(buffer, "Errors: %u",
+            statistics.temp_faults + statistics.sensor_failures);
+    display_text(0, 2, buffer);
+
+    // Emergency stops
+    sprintf(buffer, "E-stops: %u", statistics.emergency_stops);
+    display_text(0, 3, buffer);
+
+    display_flush();
+}
+
+static void render_stats_kpis(void)
+{
+    char buffer[32];
+    display_clear();
+
+    display_text(0, 0, "===== KPIs =====");
+
+    // Presses per hour
+    if (statistics.total_operating_time > 0)
+    {
+        uint32_t pph = (statistics.total_presses * 3600) / statistics.total_operating_time;
+        sprintf(buffer, "Press/hr: %lu", pph);
+        display_text(0, 1, buffer);
+    }
+
+    // Idle ratio
+    if (statistics.total_operating_time > 0)
+    {
+        uint32_t idle_ratio = (statistics.total_idle_time * 100) / statistics.total_operating_time;
+        sprintf(buffer, "Idle: %lu%%", idle_ratio);
+        display_text(0, 2, buffer);
+    }
+
+    // Temperature stability (presses in tolerance)
+    if (statistics.total_presses > 0)
+    {
+        uint32_t stability = (statistics.presses_in_tolerance * 100) / statistics.total_presses;
+        sprintf(buffer, "Temp OK: %lu%%", stability);
+        display_text(0, 3, buffer);
+    }
+
+    display_flush();
 }
 
 // =============================================================================
