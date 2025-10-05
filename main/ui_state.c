@@ -97,6 +97,10 @@ static void handle_pressing_active_state(ui_event_t event);
 static void handle_statistics_state(ui_event_t event);
 static void handle_autotune_state(ui_event_t event);           // NEW
 static void handle_autotune_complete_state(ui_event_t event);  // NEW
+static void handle_stage1_done_state(ui_event_t event);        // NEW
+static void handle_stage2_ready_state(ui_event_t event);       // NEW
+static void handle_stage2_done_state(ui_event_t event);        // NEW
+static void handle_cycle_complete_state(ui_event_t event);     // NEW
 
 // Display rendering functions
 static void render_main_menu(void);
@@ -108,6 +112,10 @@ static void render_pressing_active(void);
 static void render_statistics(void);
 static void render_autotune(void);           // NEW
 static void render_autotune_complete(void);  // NEW
+static void render_stage1_done(void);        // NEW
+static void render_stage2_ready(void);       // NEW
+static void render_stage2_done(void);        // NEW
+static void render_cycle_complete(void);     // NEW
 
 // =============================================================================
 // State Handler Table
@@ -128,9 +136,13 @@ static const state_handler_entry_t state_handlers[] = {
     {UI_STATE_SETTINGS_ADJUST, handle_settings_adjust_state, render_settings_adjust, "Adjust Setting"},
     {UI_STATE_START_PRESSING, handle_start_pressing_state, render_start_pressing, "Start Pressing"},
     {UI_STATE_PRESSING_ACTIVE, handle_pressing_active_state, render_pressing_active, "Pressing Active"},
+    {UI_STATE_STAGE1_DONE, NULL, render_stage1_done, "Stage 1 Done"},
+    {UI_STATE_STAGE2_READY, NULL, render_stage2_ready, "Stage 2 Ready"},
+    {UI_STATE_STAGE2_DONE, NULL, render_stage2_done, "Stage 2 Done"},
+    {UI_STATE_CYCLE_COMPLETE, NULL, render_cycle_complete, "Cycle Complete"},
     {UI_STATE_STATISTICS, handle_statistics_state, render_statistics, "Statistics"},
-    {UI_STATE_AUTOTUNE, handle_autotune_state, render_autotune, "Auto-Tune"},                      // NEW
-    {UI_STATE_AUTOTUNE_COMPLETE, handle_autotune_complete_state, render_autotune_complete, "Results"}, // NEW
+    {UI_STATE_AUTOTUNE, handle_autotune_state, render_autotune, "Auto-Tune"},
+    {UI_STATE_AUTOTUNE_COMPLETE, handle_autotune_complete_state, render_autotune_complete, "Results"},
 };
 
 // =============================================================================
@@ -229,7 +241,9 @@ void ui_process_event(ui_event_t event)
     {
         if (state_handlers[i].state == ui_current_state)
         {
-            state_handlers[i].handler(event);
+            if (state_handlers[i].handler != NULL) {
+                state_handlers[i].handler(event);
+            }
             return;
         }
     }
@@ -836,3 +850,52 @@ static void render_autotune_complete(void)
     display_text(0, 3, "Press any button");
     display_flush();
 }
+
+// New state render functions
+static void render_stage1_done(void)
+{
+    display_clear();
+    display_invert(true);
+    display_large_text(20, 16, "DONE");
+    display_flush();
+}
+
+static void render_stage2_ready(void)
+{
+    display_clear();
+    display_invert(false);
+    display_large_text(10, 16, "READY");
+    display_flush();
+}
+
+static void render_stage2_done(void)
+{
+    display_clear();
+    display_invert(true);
+    display_large_text(20, 16, "DONE");
+    display_flush();
+}
+
+static void render_cycle_complete(void)
+{
+    extern print_run_t print_run;
+    char buffer[32];
+
+    display_clear();
+    display_invert(false);
+    display_text(0, 0, "Cycle Complete!");
+    sprintf(buffer, "Completed: %d/%d",
+            print_run.shirts_completed,
+            print_run.num_shirts);
+    display_text(0, 1, buffer);
+    sprintf(buffer, "Avg: %lu sec", print_run.avg_time_per_shirt);
+    display_text(0, 2, buffer);
+    display_text(0, 3, "Close for next");
+    display_flush();
+}
+
+// Dummy handlers for states that don't need event handling
+static void handle_stage1_done_state(ui_event_t event) { (void)event; }
+static void handle_stage2_ready_state(ui_event_t event) { (void)event; }
+static void handle_stage2_done_state(ui_event_t event) { (void)event; }
+static void handle_cycle_complete_state(ui_event_t event) { (void)event; }

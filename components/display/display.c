@@ -25,6 +25,8 @@ static const char *TAG = "display";
 #define SH1106_CMD_SET_COLUMN_ADDR_HIGH 0x10
 #define SH1106_CMD_SEG_REMAP 0xA1        // Flip horizontally
 #define SH1106_CMD_COM_SCAN_DEC 0xC8     // Flip vertically
+#define SH1106_CMD_INVERT_DISPLAY 0xA7   // Invert display
+#define SH1106_CMD_NORMAL_DISPLAY 0xA6   // Normal display
 
 static i2c_master_bus_handle_t i2c_bus_handle;
 static i2c_master_dev_handle_t sh1106_dev_handle;
@@ -419,5 +421,42 @@ void display_large_number(uint8_t x, uint8_t y, uint8_t number)
             }
         }
         x += 16; // Character spacing
+    }
+}
+
+// Invert the display
+void display_invert(bool inverted)
+{
+    uint8_t cmd = inverted ? SH1106_CMD_INVERT_DISPLAY : SH1106_CMD_NORMAL_DISPLAY;
+    i2c_master_transmit(sh1106_dev_handle, &cmd, 1, -1);
+}
+
+// Display large text (4x scaled)
+void display_large_text(uint8_t x, uint8_t y, const char *text)
+{
+    for (int i = 0; text[i] != '\0'; i++) {
+        char c = text[i];
+        if (c == ' ') {
+            x += 20;
+            continue;
+        }
+
+        int idx = c - 32;
+        if (idx < 96) {
+            for (int col = 0; col < 5; col++) {
+                uint8_t line = font5x8[idx][col];
+                for (int bit = 0; bit < 8; bit++) {
+                    if (line & (1 << bit)) {
+                        // Scale 4x for larger text
+                        for (int sx = 0; sx < 4; sx++) {
+                            for (int sy = 0; sy < 4; sy++) {
+                                display_set_pixel(x + col * 4 + sx, y + bit * 4 + sy, true);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        x += 24; // Character spacing for 4x scale
     }
 }

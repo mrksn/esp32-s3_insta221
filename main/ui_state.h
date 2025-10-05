@@ -13,6 +13,10 @@ typedef enum
     UI_STATE_JOB_SETUP,
     UI_STATE_START_PRESSING,
     UI_STATE_PRESSING_ACTIVE,
+    UI_STATE_STAGE1_DONE,        // NEW: Stage 1 done message
+    UI_STATE_STAGE2_READY,       // NEW: Ready for Stage 2
+    UI_STATE_STAGE2_DONE,        // NEW: Stage 2 done message
+    UI_STATE_CYCLE_COMPLETE,     // NEW: Show statistics after cycle
     UI_STATE_SETTINGS_MENU,
     UI_STATE_SETTINGS_ADJUST,    // Adjusting a setting value
     UI_STATE_TIMINGS_MENU,
