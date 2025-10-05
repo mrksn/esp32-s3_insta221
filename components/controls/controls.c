@@ -13,6 +13,7 @@ static const char *TAG = "controls";
 #define BACK_BUTTON_PIN GPIO_NUM_14  // Moved from GPIO 15 (strapping pin)
 #define PAUSE_BUTTON_PIN GPIO_NUM_15 // Moved from GPIO 16
 #define REED_SWITCH_PIN GPIO_NUM_17
+#define HEATING_SWITCH_PIN GPIO_NUM_8  // Physical heating enable switch (INPUT_PULLUP, active LOW)
 #define LED_GREEN_PIN GPIO_NUM_18 // Temperature ready indicator
 #define LED_BLUE_PIN GPIO_NUM_19  // Pause mode indicator
 
@@ -136,6 +137,16 @@ esp_err_t controls_init(void)
     };
     gpio_config(&reed_config);
 
+    // Configure heating switch pin (active LOW with pull-up)
+    gpio_config_t heating_switch_config = {
+        .pin_bit_mask = (1ULL << HEATING_SWITCH_PIN),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&heating_switch_config);
+
     // Configure LED pins (outputs)
     gpio_config_t led_config = {
         .pin_bit_mask = (1ULL << LED_GREEN_PIN) | (1ULL << LED_BLUE_PIN),
@@ -251,4 +262,13 @@ void controls_set_led_green(bool on)
 void controls_set_led_blue(bool on)
 {
     gpio_set_level(LED_BLUE_PIN, on ? 1 : 0);
+}
+
+bool controls_is_heating_switch_on(void)
+{
+    // Heating switch is active LOW (switch closed/ON = GND = 0)
+    int level = gpio_get_level(HEATING_SWITCH_PIN);
+    bool is_on = (level == 0);
+    ESP_LOGD(TAG, "Heating switch GPIO %d level: %d (switch %s)", HEATING_SWITCH_PIN, level, is_on ? "ON" : "OFF");
+    return is_on;
 }

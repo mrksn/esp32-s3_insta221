@@ -19,6 +19,7 @@
 #include "ui_state.h"
 #include "controls_contract.h"
 #include "display_contract.h"
+#include "heating_contract.h"
 #include "data_model.h"
 #include "system_config.h"
 
@@ -40,6 +41,7 @@ static const char *main_menu_items[] = {
     "Job Setup",
     "Start Pressing",
     "Free Press",
+    "Heat Up",
     "Profiles",
     "Settings",
     "Statistics",
@@ -163,6 +165,11 @@ static int reset_stats_selected_index = 0;        ///< Selected reset option (0=
 static uint32_t reset_stats_press_start_time = 0; ///< When encoder push started
 static bool reset_stats_button_pressed = false;   ///< Whether button is currently pressed
 
+// Heat up mode tracking
+static uint32_t heat_up_start_time = 0;           ///< When heat up started
+static float heat_up_start_temp = 0.0f;           ///< Temperature when heat up started
+static bool heat_up_heating_enabled = false;      ///< Whether heating was enabled when entering heat up mode
+
 // External functions from main.c
 extern bool start_pid_autotune(float target_temp);
 extern bool is_pid_autotuning(void);
@@ -200,6 +207,7 @@ static void handle_stats_kpis_state(ui_event_t event);         // NEW
 static void handle_autotune_state(ui_event_t event);           // NEW
 static void handle_autotune_complete_state(ui_event_t event);  // NEW
 static void handle_reset_stats_state(ui_event_t event);        // NEW
+static void handle_heat_up_state(ui_event_t event);            // NEW
 
 // Display rendering functions
 static void render_startup(void);              // NEW
@@ -226,6 +234,7 @@ static void render_stats_kpis(void);         // NEW
 static void render_autotune(void);           // NEW
 static void render_autotune_complete(void);  // NEW
 static void render_reset_stats(void);        // NEW
+static void render_heat_up(void);            // NEW
 static void render_stage1_done(void);        // NEW
 static void render_stage2_ready(void);       // NEW
 static void render_stage2_done(void);        // NEW
@@ -272,6 +281,7 @@ static const state_handler_entry_t state_handlers[] = {
     {UI_STATE_AUTOTUNE, handle_autotune_state, render_autotune, "Auto-Tune"},
     {UI_STATE_AUTOTUNE_COMPLETE, handle_autotune_complete_state, render_autotune_complete, "Results"},
     {UI_STATE_RESET_STATS, handle_reset_stats_state, render_reset_stats, "Reset Stats"},
+    {UI_STATE_HEAT_UP, handle_heat_up_state, render_heat_up, "Heat Up"},
 };
 
 // =============================================================================
@@ -305,6 +315,12 @@ void ui_update(float current_temp)
 
     // Always update display during pressing to show countdown
     if (ui_current_state == UI_STATE_PRESSING_ACTIVE)
+    {
+        display_needs_update = true;
+    }
+
+    // Always update display during heat up to show progress
+    if (ui_current_state == UI_STATE_HEAT_UP)
     {
         display_needs_update = true;
     }
@@ -527,6 +543,13 @@ static void handle_main_menu_state(ui_event_t event)
             free_press_avg_time = 0;
             free_press_run_start_time = 0;
             ESP_LOGI(TAG, "Free press mode activated, statistics reset");
+            break;
+        case MENU_HEAT_UP:
+            ui_current_state = UI_STATE_HEAT_UP;
+            heat_up_start_time = esp_timer_get_time() / 1000000;
+            heat_up_start_temp = temperature_display_celsius;
+            heat_up_heating_enabled = heating_is_active();
+            ESP_LOGI(TAG, "Heat up mode activated");
             break;
         case MENU_PROFILES:
             ui_current_state = UI_STATE_PROFILES_MENU;
@@ -2353,4 +2376,111 @@ static void render_cycle_complete(void)
 
     display_text(0, 3, "Close for next");
     display_flush();
+}
+
+// =============================================================================
+// Heat Up Mode (NEW)
+// =============================================================================
+
+static void handle_heat_up_state(ui_event_t event)
+{
+    switch (event)
+    {
+    case UI_EVENT_BUTTON_BACK:
+        ui_current_state = UI_STATE_MAIN_MENU;
+        ESP_LOGI(TAG, "Heat up mode cancelled");
+        break;
+
+    default:
+        // Auto-transition when target reached
+        if (temperature_display_celsius >= (current_settings->target_temp - 1.0f))
+        {
+            ESP_LOGI(TAG, "Target temperature reached!");
+            // Stay in heat up mode to show the success - user can press back to exit
+        }
+        break;
+    }
+}
+
+static void render_heat_up(void)
+{
+    char buffer[32];
+    static bool heating_was_active = false;
+    static uint32_t last_update_sec = 0;
+
+    bool heating_active = heating_is_active();
+    uint32_t current_time = esp_timer_get_time() / 1000000;
+    uint32_t elapsed_sec = current_time - heat_up_start_time;
+
+    // Only redraw if heating state changed or second changed (reduce flickering)
+    if (heating_active != heating_was_active || elapsed_sec != last_update_sec)
+    {
+        display_clear();
+
+        // Check if heating is enabled
+        if (!heating_active)
+        {
+            // Heating switch is OFF - prompt user to enable it
+            display_text(0, 0, "Heating Disabled!");
+            display_text(0, 2, "Please toggle");
+            display_text(0, 3, "heating switch");
+            display_flush();
+            heating_was_active = false;
+            return;
+        }
+
+        // Heating is ON - show heat up progress
+        display_text(0, 0, "Heating Up");
+
+        // Show current / target temp
+        sprintf(buffer, "%.1f / %.1fC",
+                temperature_display_celsius,
+                current_settings->target_temp);
+        display_text(0, 1, buffer);
+
+        // Show elapsed time
+        uint32_t elapsed_min = elapsed_sec / 60;
+        uint32_t elapsed_sec_remainder = elapsed_sec % 60;
+        sprintf(buffer, "Time: %lum %lus", elapsed_min, elapsed_sec_remainder);
+        display_text(0, 2, buffer);
+
+        // Calculate ETA based on heating rate
+        float temp_diff = temperature_display_celsius - heat_up_start_temp;
+        float temp_remaining = current_settings->target_temp - temperature_display_celsius;
+
+        if (temp_diff > 0.5f && elapsed_sec > 10)  // Need some data before estimating
+        {
+            // Calculate heating rate (degrees per second)
+            float heating_rate = temp_diff / elapsed_sec;
+
+            if (heating_rate > 0.01f)  // Avoid division by very small numbers
+            {
+                uint32_t eta_sec = (uint32_t)(temp_remaining / heating_rate);
+                uint32_t eta_min = eta_sec / 60;
+                uint32_t eta_sec_remainder = eta_sec % 60;
+
+                if (temp_remaining > 1.0f)
+                {
+                    sprintf(buffer, "ETA: %lum %lus", eta_min, eta_sec_remainder);
+                }
+                else
+                {
+                    sprintf(buffer, "ETA: Ready!");
+                }
+                display_text(0, 3, buffer);
+            }
+            else
+            {
+                display_text(0, 3, "ETA: Calculating...");
+            }
+        }
+        else
+        {
+            display_text(0, 3, "ETA: Calculating...");
+        }
+
+        display_flush();
+        heating_was_active = true;
+        last_update_sec = elapsed_sec;
+    }
 }

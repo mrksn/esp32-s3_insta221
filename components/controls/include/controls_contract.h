@@ -36,4 +36,7 @@ rotary_event_t controls_get_rotary_event(void);
 // Check reed switch (press closed)
 bool controls_is_press_closed(void);
 
+// Check heating enable switch (physical switch)
+bool controls_is_heating_switch_on(void);
+
 #endif // CONTROLS_CONTRACT_H

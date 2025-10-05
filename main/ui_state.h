@@ -37,6 +37,7 @@ typedef enum
     UI_STATE_AUTOTUNE,           // NEW: Auto-tune PID state
     UI_STATE_AUTOTUNE_COMPLETE,  // NEW: Auto-tune results display
     UI_STATE_RESET_STATS,        // NEW: Reset statistics state
+    UI_STATE_HEAT_UP,            // NEW: Heat up mode
     UI_STATE_ERROR
 } ui_state_t;
 
@@ -46,6 +47,7 @@ typedef enum
     MENU_JOB_SETUP,
     MENU_START_PRESSING,
     MENU_FREE_PRESS,     // NEW: Free press mode without job tracking
+    MENU_HEAT_UP,        // NEW: Heat up mode
     MENU_PROFILES,       // NEW: Material profiles
     MENU_SETTINGS,
     MENU_STATISTICS,

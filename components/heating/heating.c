@@ -19,6 +19,7 @@
 #include "heating_contract.h"
 #include "pid_controller.h"
 #include "system_config.h"
+#include "controls_contract.h"
 #include "esp_log.h"
 #include "driver/ledc.h"
 #include "esp_timer.h"
@@ -91,11 +92,19 @@ esp_err_t heating_init(void)
  *
  * Controls the SSR duty cycle to set heating power from 0-100%.
  * Values above 100% are clamped to 100% with a warning.
+ * If the physical heating switch is OFF, no power will be applied regardless of the requested value.
  *
  * @param power_percent Power level as percentage (0-100)
  */
 void heating_set_power(uint8_t power_percent)
 {
+    // Check if heating switch is enabled
+    if (!controls_is_heating_switch_on() && power_percent > 0)
+    {
+        ESP_LOGW(TAG, "Heating switch is OFF - cannot apply power (requested %d%%)", power_percent);
+        power_percent = 0;  // Force to zero if switch is off
+    }
+
     if (power_percent > HEATING_POWER_MAX_PERCENT)
     {
         ESP_LOGW(TAG, "Power clamped from %d%% to %d%%",
@@ -109,7 +118,7 @@ void heating_set_power(uint8_t power_percent)
     ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, duty);
     ledc_update_duty(LEDC_MODE, LEDC_CHANNEL);
 
-    ESP_LOGD(TAG, "Heating power set to %d%% (duty: %d)", power_percent, duty);
+    ESP_LOGD(TAG, "Heating power set to %d%% (duty: %lu)", power_percent, duty);
 }
 
 /**
@@ -125,14 +134,20 @@ void heating_emergency_shutoff(void)
 }
 
 /**
- * @brief Check if heating is currently active
+ * @brief Check if heating is enabled (physical switch check)
  *
- * @return true if heating power is above 0%, false if off
+ * This function checks if the physical heating enable switch is in the ON position.
+ * It does NOT check if heating power is currently being applied - that's controlled
+ * by the PID controller and safety systems.
+ *
+ * @return true if heating switch is ON (enabled), false if OFF (disabled)
  */
 bool heating_is_active(void)
 {
-    uint32_t duty = ledc_get_duty(LEDC_MODE, LEDC_CHANNEL);
-    return duty > 0;
+    // Check physical heating switch - this tells us if heating is ALLOWED
+    bool switch_on = controls_is_heating_switch_on();
+    ESP_LOGD(TAG, "heating_is_active: switch=%d (heating %s)", switch_on, switch_on ? "ENABLED" : "DISABLED");
+    return switch_on;
 }
 
 /**
