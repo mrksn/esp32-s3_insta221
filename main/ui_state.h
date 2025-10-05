@@ -15,6 +15,7 @@ typedef enum
     UI_STATE_PRINT_TYPE_SELECT,  // Selecting print type
     UI_STATE_START_PRESSING,
     UI_STATE_FREE_PRESS,         // NEW: Free press mode
+    UI_STATE_PROFILES_MENU,      // NEW: Material profiles menu
     UI_STATE_PRESSING_ACTIVE,
     UI_STATE_STAGE1_DONE,        // NEW: Stage 1 done message
     UI_STATE_STAGE2_READY,       // NEW: Ready for Stage 2
@@ -27,7 +28,11 @@ typedef enum
     UI_STATE_TEMP_ADJUST,        // Adjusting target temperature
     UI_STATE_PID_MENU,           // PID Control submenu
     UI_STATE_PID_ADJUST,         // Adjusting a PID value
-    UI_STATE_STATISTICS,
+    UI_STATE_STATISTICS,         // Statistics main menu
+    UI_STATE_STATS_PRODUCTION,   // Production statistics view
+    UI_STATE_STATS_TEMPERATURE,  // Temperature statistics view
+    UI_STATE_STATS_EVENTS,       // Events statistics view
+    UI_STATE_STATS_KPIS,         // KPIs statistics view
     UI_STATE_AUTOTUNE,           // NEW: Auto-tune PID state
     UI_STATE_AUTOTUNE_COMPLETE,  // NEW: Auto-tune results display
     UI_STATE_ERROR
@@ -39,6 +44,7 @@ typedef enum
     MENU_JOB_SETUP,
     MENU_START_PRESSING,
     MENU_FREE_PRESS,     // NEW: Free press mode without job tracking
+    MENU_PROFILES,       // NEW: Material profiles
     MENU_SETTINGS,
     MENU_STATISTICS,
     MENU_COUNT
@@ -78,6 +84,16 @@ typedef enum
     PID_COUNT
 } pid_item_t;
 
+// Statistics submenu items
+typedef enum
+{
+    STATS_PRODUCTION,
+    STATS_TEMPERATURE,
+    STATS_EVENTS,
+    STATS_KPIS,
+    STATS_COUNT
+} stats_item_t;
+
 // UI Events
 typedef enum
 {
@@ -111,6 +127,8 @@ void ui_adjust_value(int8_t delta);
 bool ui_is_free_press_mode(void);
 void ui_increment_free_press_count(void);
 void ui_update_free_press_timing(uint32_t elapsed_time);
+uint32_t ui_get_free_press_run_start_time(void);
+void ui_set_free_press_run_start_time(uint32_t start_time);
 
 // Display update
 void ui_update_display(void);

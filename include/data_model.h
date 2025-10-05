@@ -108,6 +108,42 @@ typedef struct
     uint16_t stage2_default; ///< Default stage 2 duration in seconds
 } settings_t;
 
+/**
+ * @brief Comprehensive statistics tracking
+ *
+ * Tracks detailed production, temperature, and event statistics
+ * for analysis and optimization.
+ */
+typedef struct
+{
+    // Production statistics
+    uint32_t total_presses;              ///< Total number of presses completed
+    uint32_t total_operating_time;       ///< Total time system has been operating (seconds)
+    uint32_t total_idle_time;            ///< Total time between presses (seconds)
+    uint32_t session_start_time;         ///< When current session started (for calculations)
+
+    // Temperature statistics
+    uint32_t total_warmup_time;          ///< Cumulative warmup time (seconds)
+    uint16_t warmup_count;               ///< Number of warmups tracked
+    float avg_warmup_time;               ///< Average time to reach target temp (seconds)
+    float temp_variance_sum;             ///< Sum of temperature variances (for std dev)
+    uint16_t temp_samples;               ///< Number of temperature samples
+    float avg_temp_drop;                 ///< Average temperature drop during pressing
+    uint16_t presses_since_pid_tune;     ///< Presses since last PID tuning
+    uint32_t ssr_switch_count;           ///< SSR on/off cycle count
+
+    // Event tracking
+    uint16_t aborted_cycles;             ///< Number of aborted/incomplete cycles
+    uint16_t temp_faults;                ///< Temperature sensor fault count
+    uint16_t early_releases;             ///< Press opened before timer complete
+    uint16_t sensor_failures;            ///< Sensor read failure count
+    uint16_t power_cycles;               ///< System restart/power cycle count
+    uint16_t emergency_stops;            ///< Emergency stop activation count
+
+    // KPI data (some calculated on-the-fly)
+    uint16_t presses_in_tolerance;       ///< Presses completed within temp tolerance
+} statistics_t;
+
 // =============================================================================
 // Validation Functions
 // =============================================================================

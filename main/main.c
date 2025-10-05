@@ -77,6 +77,7 @@ static const char *TAG = "main";
 settings_t settings;              ///< Global settings configuration
 print_run_t print_run;            ///< Current print run data
 pressing_cycle_t current_cycle;   ///< Current pressing cycle state
+statistics_t statistics;          ///< Comprehensive statistics tracking
 float current_temperature = 0.0f; ///< Current temperature reading (°C)
 
 // Pressing cycle state management
@@ -659,13 +660,23 @@ void start_pressing_cycle(void)
         cycle_start_time = esp_timer_get_time() / 1000000; // seconds
         stage_start_time = cycle_start_time;
 
-        // Set run start time on first cycle
-        if (run_start_time == 0)
+        // Set run start time on first cycle (separate tracking for free press vs job mode)
+        if (ui_is_free_press_mode())
         {
-            run_start_time = cycle_start_time;
+            if (ui_get_free_press_run_start_time() == 0)
+            {
+                ui_set_free_press_run_start_time(cycle_start_time);
+            }
+        }
+        else
+        {
+            if (run_start_time == 0)
+            {
+                run_start_time = cycle_start_time;
+            }
         }
 
-        current_cycle.shirt_id = print_run.progress + 1;
+        current_cycle.shirt_id = ui_is_free_press_mode() ? 0 : (print_run.progress + 1);
         current_cycle.side = FRONT; // Always start with front
         current_cycle.stage1_duration = settings.stage1_default;
         current_cycle.stage2_duration = settings.stage2_default;
@@ -752,10 +763,11 @@ void complete_pressing_cycle(void)
             // Free press mode - just increment counter and track timing
             ui_increment_free_press_count();
 
-            // Update total elapsed time from run start
-            if (run_start_time > 0)
+            // Update total elapsed time from free press run start
+            uint32_t free_press_start = ui_get_free_press_run_start_time();
+            if (free_press_start > 0)
             {
-                uint32_t total_elapsed = current_time - run_start_time;
+                uint32_t total_elapsed = current_time - free_press_start;
                 ui_update_free_press_timing(total_elapsed);
             }
 

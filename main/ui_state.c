@@ -38,8 +38,24 @@ static const char *main_menu_items[] = {
     "Job Setup",
     "Start Pressing",
     "Free Press",
+    "Profiles",
     "Settings",
     "Statistics"
+};
+
+static const char *profile_items[] = {
+    "Cotton",
+    "Polyester",
+    "Blockout",
+    "Wood",
+    "Metal"
+};
+
+static const char *stats_menu_items[] = {
+    "Production",
+    "Temperature",
+    "Events",
+    "KPIs"
 };
 
 static const char *settings_menu_items[] = {
@@ -98,6 +114,21 @@ static printing_type_t job_setup_staged_print_type = SINGLE_SIDED;
 // Print type selection state
 static int print_type_selected_index = 0;
 
+// Profile selection state
+typedef enum {
+    PROFILE_COTTON,
+    PROFILE_POLYESTER,
+    PROFILE_BLOCKOUT,
+    PROFILE_WOOD,
+    PROFILE_METAL,
+    PROFILE_COUNT
+} profile_type_t;
+
+static int profile_selected_index = 0;
+
+// Statistics submenu state
+static int stats_selected_index = 0;
+
 // Settings submenu state
 static int timer_selected_index = 0;
 static bool timer_edit_mode = false;
@@ -115,10 +146,11 @@ static float pid_staged_value = 0.0f;
 static bool was_press_closed_ui = false;
 
 // Free press mode tracking
-static bool free_press_mode = false;         ///< Whether we're in free press mode (no job tracking)
-static uint16_t free_press_count = 0;        ///< Number of shirts pressed in free press mode
-static uint32_t free_press_time_elapsed = 0; ///< Time elapsed in free press mode
-static uint32_t free_press_avg_time = 0;     ///< Average time per shirt in free press mode
+static bool free_press_mode = false;              ///< Whether we're in free press mode (no job tracking)
+static uint16_t free_press_count = 0;             ///< Number of shirts pressed in free press mode
+static uint32_t free_press_time_elapsed = 0;      ///< Time elapsed in free press mode
+static uint32_t free_press_avg_time = 0;          ///< Average time per shirt in free press mode
+static uint32_t free_press_run_start_time = 0;    ///< When free press session started
 
 // External functions from main.c
 extern bool start_pid_autotune(float target_temp);
@@ -142,6 +174,7 @@ static void handle_pid_menu_state(ui_event_t event);
 static void handle_pid_adjust_state(ui_event_t event);
 static void handle_start_pressing_state(ui_event_t event);
 static void handle_free_press_state(ui_event_t event);         // NEW
+static void handle_profiles_menu_state(ui_event_t event);      // NEW
 static void handle_pressing_active_state(ui_event_t event);
 static void handle_statistics_state(ui_event_t event);
 static void handle_autotune_state(ui_event_t event);           // NEW
@@ -161,6 +194,7 @@ static void render_pid_menu(void);
 static void render_pid_adjust(void);
 static void render_start_pressing(void);
 static void render_free_press(void);          // NEW
+static void render_profiles_menu(void);       // NEW
 static void render_pressing_active(void);
 static void render_statistics(void);
 static void render_autotune(void);           // NEW
@@ -196,6 +230,7 @@ static const state_handler_entry_t state_handlers[] = {
     {UI_STATE_PID_ADJUST, handle_pid_adjust_state, render_pid_adjust, "Adjust PID"},
     {UI_STATE_START_PRESSING, handle_start_pressing_state, render_start_pressing, "Start Pressing"},
     {UI_STATE_FREE_PRESS, handle_free_press_state, render_free_press, "Free Press"},
+    {UI_STATE_PROFILES_MENU, handle_profiles_menu_state, render_profiles_menu, "Profiles"},
     {UI_STATE_PRESSING_ACTIVE, handle_pressing_active_state, render_pressing_active, "Pressing Active"},
     {UI_STATE_STAGE1_DONE, NULL, render_stage1_done, "Stage 1 Done"},
     {UI_STATE_STAGE2_READY, NULL, render_stage2_ready, "Stage 2 Ready"},
@@ -368,6 +403,16 @@ void ui_update_free_press_timing(uint32_t elapsed_time)
     }
 }
 
+uint32_t ui_get_free_press_run_start_time(void)
+{
+    return free_press_run_start_time;
+}
+
+void ui_set_free_press_run_start_time(uint32_t start_time)
+{
+    free_press_run_start_time = start_time;
+}
+
 menu_item_t ui_get_selected_item(void)
 {
     return menu_selected_item;
@@ -414,6 +459,16 @@ static void handle_main_menu_state(ui_event_t event)
         case MENU_FREE_PRESS:
             ui_current_state = UI_STATE_FREE_PRESS;
             free_press_mode = true;   // Free press mode
+            // Reset free press statistics for new session
+            free_press_count = 0;
+            free_press_time_elapsed = 0;
+            free_press_avg_time = 0;
+            free_press_run_start_time = 0;
+            ESP_LOGI(TAG, "Free press mode activated, statistics reset");
+            break;
+        case MENU_PROFILES:
+            ui_current_state = UI_STATE_PROFILES_MENU;
+            profile_selected_index = 0;
             break;
         case MENU_SETTINGS:
             ui_current_state = UI_STATE_SETTINGS_MENU;
@@ -1112,6 +1167,62 @@ static void handle_free_press_state(ui_event_t event)
     }
 }
 
+static void handle_profiles_menu_state(ui_event_t event)
+{
+    switch (event)
+    {
+    case UI_EVENT_ROTARY_CW:
+        profile_selected_index = (profile_selected_index + 1) % PROFILE_COUNT;
+        break;
+
+    case UI_EVENT_ROTARY_CCW:
+        profile_selected_index = (profile_selected_index - 1 + PROFILE_COUNT) % PROFILE_COUNT;
+        break;
+
+    case UI_EVENT_ROTARY_PUSH:
+        // Apply selected profile settings
+        switch (profile_selected_index)
+        {
+        case PROFILE_COTTON:
+            current_settings->target_temp = 140.0f;
+            current_settings->stage1_default = 15;
+            current_settings->stage2_default = 5;
+            break;
+        case PROFILE_POLYESTER:
+            current_settings->target_temp = 125.0f;
+            current_settings->stage1_default = 12;
+            current_settings->stage2_default = 5;
+            break;
+        case PROFILE_BLOCKOUT:
+            current_settings->target_temp = 125.0f;
+            current_settings->stage1_default = 12;
+            current_settings->stage2_default = 5;
+            break;
+        case PROFILE_WOOD:
+            current_settings->target_temp = 170.0f;
+            current_settings->stage1_default = 20;
+            current_settings->stage2_default = 5;
+            break;
+        case PROFILE_METAL:
+            current_settings->target_temp = 204.0f;
+            current_settings->stage1_default = 80;
+            current_settings->stage2_default = 5;
+            break;
+        }
+        save_persistent_data();
+        ESP_LOGI(TAG, "Applied profile: %s", profile_items[profile_selected_index]);
+        ui_current_state = UI_STATE_MAIN_MENU;
+        break;
+
+    case UI_EVENT_BUTTON_BACK:
+        ui_current_state = UI_STATE_MAIN_MENU;
+        break;
+
+    default:
+        break;
+    }
+}
+
 static void handle_pressing_active_state(ui_event_t event)
 {
     switch (event)
@@ -1133,6 +1244,32 @@ static void handle_statistics_state(ui_event_t event)
 {
     switch (event)
     {
+    case UI_EVENT_ROTARY_CW:
+        stats_selected_index = (stats_selected_index + 1) % STATS_COUNT;
+        break;
+
+    case UI_EVENT_ROTARY_CCW:
+        stats_selected_index = (stats_selected_index - 1 + STATS_COUNT) % STATS_COUNT;
+        break;
+
+    case UI_EVENT_ROTARY_PUSH:
+        switch (stats_selected_index)
+        {
+        case STATS_PRODUCTION:
+            ui_current_state = UI_STATE_STATS_PRODUCTION;
+            break;
+        case STATS_TEMPERATURE:
+            ui_current_state = UI_STATE_STATS_TEMPERATURE;
+            break;
+        case STATS_EVENTS:
+            ui_current_state = UI_STATE_STATS_EVENTS;
+            break;
+        case STATS_KPIS:
+            ui_current_state = UI_STATE_STATS_KPIS;
+            break;
+        }
+        break;
+
     case UI_EVENT_BUTTON_BACK:
         ui_current_state = UI_STATE_MAIN_MENU;
         break;
@@ -1473,6 +1610,11 @@ static void render_free_press(void)
     display_flush();
 }
 
+static void render_profiles_menu(void)
+{
+    display_menu(profile_items, PROFILE_COUNT, profile_selected_index);
+}
+
 static void render_pressing_active(void)
 {
     extern pressing_cycle_t current_cycle;
@@ -1508,11 +1650,10 @@ static void render_pressing_active(void)
             return;  // Don't show countdown when waiting
         }
 
-        // Draw stage label at top left
-        display_text(0, 0, (current_stage == STAGE1) ? "Stage 1" : "Stage 2");
-
-        // Display shirt number on the right side of line 0 (right-aligned)
+        // Build complete top line with stage and shirt number
+        char top_line[22];  // 21 chars + null terminator
         char shirt_buffer[10];
+
         if (free_press_mode)
         {
             sprintf(shirt_buffer, "# %d", free_press_count + 1);
@@ -1521,9 +1662,14 @@ static void render_pressing_active(void)
         {
             sprintf(shirt_buffer, "# %d", current_cycle.shirt_id);
         }
-        // Right-align: OLED is 128 pixels wide, ~6 pixels per char, 21 chars total width
-        // Position shirt number at column 15 (leaves room for "# 999")
-        display_text(15, 0, shirt_buffer);
+
+        // Format: "Stage 1         # 125" (stage left-aligned, shirt number right-aligned)
+        const char *stage_text = (current_stage == STAGE1) ? "Stage 1" : "Stage 2";
+        int padding = 21 - strlen(stage_text) - strlen(shirt_buffer);
+        if (padding < 1) padding = 1;
+
+        sprintf(top_line, "%s%*s", stage_text, padding + (int)strlen(shirt_buffer), shirt_buffer);
+        display_text(0, 0, top_line);
 
         screen_initialized = true;
         last_stage = current_stage;
@@ -1565,42 +1711,8 @@ static void render_pressing_active(void)
 
 static void render_statistics(void)
 {
-    char buffer[32];
-
-    display_clear();
-
-    // Title
-    display_text(0, 0, "=== Statistics ===");
-
-    // Completed shirts (only show target if not in free press mode)
-    if (free_press_mode)
-    {
-        sprintf(buffer, "Pressed: %d", free_press_count);
-    }
-    else
-    {
-        sprintf(buffer, "Done: %d / %d",
-                current_run->shirts_completed,
-                current_run->num_shirts);
-    }
-    display_text(0, 1, buffer);
-
-    // Average time per shirt
-    uint32_t avg_time = free_press_mode ? free_press_avg_time : current_run->avg_time_per_shirt;
-    if (avg_time > 0)
-    {
-        sprintf(buffer, "Avg: %lu s/shirt", avg_time);
-        display_text(0, 2, buffer);
-    }
-
-    // DEBUG: Display heat-up time for PID tuning (remove in final version)
-    if (time_to_target_temp > 0)
-    {
-        sprintf(buffer, "Heat: %lu s", time_to_target_temp);
-        display_text(0, 3, buffer);
-    }
-
-    display_flush();
+    // Show statistics submenu
+    display_menu(stats_menu_items, STATS_COUNT, stats_selected_index);
 }
 
 // =============================================================================
