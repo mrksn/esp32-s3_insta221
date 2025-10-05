@@ -7,8 +7,8 @@
 static const char *TAG = "display";
 
 // I2C configuration
-#define I2C_MASTER_SCL_IO GPIO_NUM_20
-#define I2C_MASTER_SDA_IO GPIO_NUM_21
+#define I2C_MASTER_SCL_IO GPIO_NUM_35
+#define I2C_MASTER_SDA_IO GPIO_NUM_36
 #define I2C_MASTER_FREQ_HZ 100000
 
 // SH1106 configuration
