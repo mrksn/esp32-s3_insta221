@@ -60,6 +60,12 @@ typedef struct
         uint8_t retry_count;           ///< Number of sensor read retry attempts
         uint32_t retry_delay_ms;       ///< Delay between retry attempts (ms)
     } sensor;
+
+    // Simulation mode configuration
+    struct
+    {
+        bool enabled;                  ///< Enable simulation mode (true = simulated, false = real hardware)
+    } simulation;
 } system_config_t;
 
 // =============================================================================
@@ -94,6 +100,9 @@ static const system_config_t SYSTEM_CONFIG = {
     .sensor = {
         .retry_count = 3,
         .retry_delay_ms = 500,
+    },
+    .simulation = {
+        .enabled = false,  ///< Set to true to enable simulation mode for SSR testing
     },
 };
 

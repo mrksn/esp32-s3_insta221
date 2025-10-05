@@ -20,6 +20,8 @@
 #include "esp_log.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
+#include "system_config.h"
+#include "esp_timer.h"
 
 static const char *TAG = "sensors";
 
@@ -33,6 +35,92 @@ static const char *TAG = "sensors";
 
 static spi_device_handle_t spi_handle; ///< SPI device handle for MAX31855
 
+// =============================================================================
+// Heat Plate Simulation Model
+// =============================================================================
+
+// Simulation state
+static float sim_current_temp = 20.0f;      ///< Current simulated temperature (°C)
+static uint64_t sim_last_update_time = 0;   ///< Last simulation update time (microseconds)
+static float sim_ambient_temp = 20.0f;      ///< Ambient temperature (°C)
+static float sim_heating_power = 0.0f;      ///< Current heating power (0-100%)
+
+// Thermal model parameters
+#define SIM_THERMAL_MASS 2200.0f        ///< Thermal mass (J/°C) - represents heat capacity of the plate
+#define SIM_HEATING_POWER_MAX 2200.0f   ///< Maximum heating power (W) - 2200W heating element
+#define SIM_HEAT_LOSS_COEFF 15.0f       ///< Heat loss coefficient (W/°C) - convection + radiation
+#define SIM_UPDATE_INTERVAL_MS 100      ///< Simulation update interval (ms)
+
+/**
+ * @brief Update heating power for simulation
+ *
+ * This function should be called whenever the SSR output changes.
+ * In simulation mode, it captures the PWM duty cycle to simulate heating.
+ *
+ * @param power_percent Heating power as percentage (0-100)
+ */
+void sensor_sim_set_heating_power(float power_percent)
+{
+    sim_heating_power = CLAMP(power_percent, 0.0f, 100.0f);
+    ESP_LOGD(TAG, "Simulation: Heating power set to %.1f%%", sim_heating_power);
+}
+
+/**
+ * @brief Update the simulated heat plate temperature
+ *
+ * This implements a simple thermal model:
+ * - Heat input from heating element (proportional to power)
+ * - Heat loss to ambient (proportional to temperature difference)
+ * - Temperature change based on thermal mass
+ *
+ * Differential equation:
+ * dT/dt = (P_heating - k * (T - T_ambient)) / C
+ * where:
+ *   T = temperature
+ *   P_heating = heating power input
+ *   k = heat loss coefficient
+ *   T_ambient = ambient temperature
+ *   C = thermal mass (heat capacity)
+ */
+static void sensor_sim_update_temperature(void)
+{
+    uint64_t current_time = esp_timer_get_time();
+
+    // Initialize on first call
+    if (sim_last_update_time == 0)
+    {
+        sim_last_update_time = current_time;
+        return;
+    }
+
+    // Calculate time delta in seconds
+    float dt = (current_time - sim_last_update_time) / 1000000.0f;
+    sim_last_update_time = current_time;
+
+    // Calculate heating power input (W)
+    float heating_input = (sim_heating_power / 100.0f) * SIM_HEATING_POWER_MAX;
+
+    // Calculate heat loss (W) - Newton's law of cooling
+    float heat_loss = SIM_HEAT_LOSS_COEFF * (sim_current_temp - sim_ambient_temp);
+
+    // Calculate net heat flow (W)
+    float net_heat_flow = heating_input - heat_loss;
+
+    // Calculate temperature change (°C)
+    // Q = m * c * dT, so dT = Q / (m * c)
+    // Power = Q / dt, so Q = Power * dt
+    float temp_change = (net_heat_flow * dt) / SIM_THERMAL_MASS;
+
+    // Update temperature
+    sim_current_temp += temp_change;
+
+    // Clamp to reasonable bounds
+    sim_current_temp = CLAMP(sim_current_temp, sim_ambient_temp - 5.0f, 350.0f);
+
+    ESP_LOGV(TAG, "Simulation: Power=%.1fW, Loss=%.1fW, dT=%.3f°C, Temp=%.2f°C",
+             heating_input, heat_loss, temp_change, sim_current_temp);
+}
+
 /**
  * @brief Initialize the MAX31855 temperature sensor
  *
@@ -43,6 +131,17 @@ static spi_device_handle_t spi_handle; ///< SPI device handle for MAX31855
  */
 esp_err_t sensor_init(void)
 {
+    // Check if simulation mode is enabled
+    if (SYSTEM_CONFIG.simulation.enabled)
+    {
+        ESP_LOGI(TAG, "Initializing in SIMULATION mode - no real hardware");
+        ESP_LOGI(TAG, "SSR output on GPIO %d can be monitored with oscilloscope", 2);
+        sim_current_temp = sim_ambient_temp;
+        sim_last_update_time = 0;
+        sim_heating_power = 0.0f;
+        return ESP_OK;
+    }
+
     ESP_LOGI(TAG, "Initializing MAX31855 thermocouple sensor");
 
     // SPI bus configuration for ESP32-S3
@@ -110,6 +209,20 @@ bool sensor_read_temperature(float *temperature)
         return false;
     }
 
+    // Check if simulation mode is enabled
+    if (SYSTEM_CONFIG.simulation.enabled)
+    {
+        // Update simulation model
+        sensor_sim_update_temperature();
+
+        // Return simulated temperature
+        *temperature = sim_current_temp;
+        ESP_LOGD(TAG, "Simulation temperature: %.2f°C (power: %.1f%%)",
+                 *temperature, sim_heating_power);
+        return true;
+    }
+
+    // Real hardware mode - read from MAX31855
     // Prepare SPI transaction for 32-bit read
     spi_transaction_t trans = {
         .length = 32,                  // 32 bits total

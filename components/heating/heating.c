@@ -26,6 +26,9 @@
 
 static const char *TAG = "heating";
 
+// External function from sensors.c for simulation
+extern void sensor_sim_set_heating_power(float power_percent);
+
 // LEDC PWM Configuration
 #define LEDC_TIMER LEDC_TIMER_0
 #define LEDC_MODE LEDC_LOW_SPEED_MODE
@@ -117,6 +120,12 @@ void heating_set_power(uint8_t power_percent)
 
     ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, duty);
     ledc_update_duty(LEDC_MODE, LEDC_CHANNEL);
+
+    // Update simulation model if in simulation mode
+    if (SYSTEM_CONFIG.simulation.enabled)
+    {
+        sensor_sim_set_heating_power((float)power_percent);
+    }
 
     ESP_LOGD(TAG, "Heating power set to %d%% (duty: %lu)", power_percent, duty);
 }
