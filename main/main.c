@@ -81,6 +81,7 @@ float current_temperature = 0.0f; ///< Current temperature reading (°C)
 
 // Pressing cycle state management
 bool pressing_active = false;        ///< Whether a pressing cycle is currently active
+uint32_t run_start_time = 0;         ///< Timestamp when the first cycle of the run started
 uint32_t cycle_start_time = 0;       ///< Timestamp when current cycle started
 uint32_t stage_start_time = 0;       ///< Timestamp when current stage started
 cycle_status_t current_stage = IDLE; ///< Current cycle stage
@@ -553,6 +554,9 @@ void init_defaults(void)
     print_run.time_elapsed = 0;
     print_run.shirts_completed = 0;
     print_run.avg_time_per_shirt = 0;
+
+    // Reset run timing
+    run_start_time = 0;
 }
 
 void load_persistent_data(void)
@@ -597,6 +601,7 @@ void load_persistent_data(void)
             print_run.time_elapsed = 0;
             print_run.shirts_completed = 0;
             print_run.avg_time_per_shirt = 0;
+            run_start_time = 0;
         }
     }
 }
@@ -634,6 +639,12 @@ void start_pressing_cycle(void)
         current_stage = STAGE1;
         cycle_start_time = esp_timer_get_time() / 1000000; // seconds
         stage_start_time = cycle_start_time;
+
+        // Set run start time on first cycle
+        if (run_start_time == 0)
+        {
+            run_start_time = cycle_start_time;
+        }
 
         current_cycle.shirt_id = print_run.progress + 1;
         current_cycle.side = FRONT; // Always start with front
@@ -719,7 +730,12 @@ void complete_pressing_cycle(void)
         // Update print run progress
         print_run.shirts_completed++;
         print_run.progress = print_run.shirts_completed;
-        print_run.time_elapsed += cycle_duration;
+
+        // Update total elapsed time from run start (includes time between shirts)
+        if (run_start_time > 0)
+        {
+            print_run.time_elapsed = current_time - run_start_time;
+        }
 
         // Update average time per shirt
         if (print_run.shirts_completed > 0)
@@ -842,6 +858,7 @@ void emergency_shutdown_system(const char *reason)
     current_stage = IDLE;
     cycle_start_time = 0;
     stage_start_time = 0;
+    run_start_time = 0;
 
     // Log emergency state
     ESP_LOGE(TAG, "Emergency shutdown complete - system locked for safety");
