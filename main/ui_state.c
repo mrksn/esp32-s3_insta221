@@ -1773,19 +1773,26 @@ static void render_stats_production(void)
     sprintf(buffer, "Total: %lu", statistics.total_presses);
     display_text(0, 1, buffer);
 
-    // Operating time (hours:minutes)
-    uint32_t hours = statistics.total_operating_time / 3600;
-    uint32_t mins = (statistics.total_operating_time % 3600) / 60;
+    // Calculate current session time
+    extern uint32_t system_start_time;
+    uint32_t current_time = esp_timer_get_time() / 1000000;
+    uint32_t session_time = (system_start_time > 0) ? (current_time - system_start_time) : 0;
+
+    // Operating time (use session time if total_operating_time not tracked)
+    uint32_t op_time = (statistics.total_operating_time > 0) ? statistics.total_operating_time : session_time;
+    uint32_t hours = op_time / 3600;
+    uint32_t mins = (op_time % 3600) / 60;
     sprintf(buffer, "Time: %luh %lum", hours, mins);
     display_text(0, 2, buffer);
 
     // Idle time ratio
-    if (statistics.total_operating_time > 0)
+    uint32_t idle_pct = 0;
+    if (op_time > 0 && statistics.total_idle_time > 0)
     {
-        uint32_t idle_pct = (statistics.total_idle_time * 100) / statistics.total_operating_time;
-        sprintf(buffer, "Idle: %lu%%", idle_pct);
-        display_text(0, 3, buffer);
+        idle_pct = (statistics.total_idle_time * 100) / op_time;
     }
+    sprintf(buffer, "Idle: %lu%%", idle_pct);
+    display_text(0, 3, buffer);
 
     display_flush();
 }
@@ -1803,12 +1810,12 @@ static void render_stats_temperature(void)
             current_settings->target_temp);
     display_text(0, 1, buffer);
 
-    // Average warmup time
-    if (statistics.warmup_count > 0)
-    {
-        sprintf(buffer, "Warmup: %.0fs", statistics.avg_warmup_time);
-        display_text(0, 2, buffer);
-    }
+    // Average warmup time (show even if zero)
+    extern uint32_t time_to_target_temp;
+    uint32_t warmup = (statistics.warmup_count > 0) ?
+                      (uint32_t)statistics.avg_warmup_time : time_to_target_temp;
+    sprintf(buffer, "Warmup: %lus", warmup);
+    display_text(0, 2, buffer);
 
     // Presses since PID tune
     sprintf(buffer, "Since tune: %u", statistics.presses_since_pid_tune);
@@ -1847,29 +1854,38 @@ static void render_stats_kpis(void)
 
     display_text(0, 0, "===== KPIs =====");
 
+    // Calculate session time for KPIs
+    extern uint32_t system_start_time;
+    uint32_t current_time = esp_timer_get_time() / 1000000;
+    uint32_t session_time = (system_start_time > 0) ? (current_time - system_start_time) : 0;
+    uint32_t op_time = (statistics.total_operating_time > 0) ? statistics.total_operating_time : session_time;
+
     // Presses per hour
-    if (statistics.total_operating_time > 0)
+    uint32_t pph = 0;
+    if (op_time > 0)
     {
-        uint32_t pph = (statistics.total_presses * 3600) / statistics.total_operating_time;
-        sprintf(buffer, "Press/hr: %lu", pph);
-        display_text(0, 1, buffer);
+        pph = (statistics.total_presses * 3600) / op_time;
     }
+    sprintf(buffer, "Press/hr: %lu", pph);
+    display_text(0, 1, buffer);
 
     // Idle ratio
-    if (statistics.total_operating_time > 0)
+    uint32_t idle_ratio = 0;
+    if (op_time > 0 && statistics.total_idle_time > 0)
     {
-        uint32_t idle_ratio = (statistics.total_idle_time * 100) / statistics.total_operating_time;
-        sprintf(buffer, "Idle: %lu%%", idle_ratio);
-        display_text(0, 2, buffer);
+        idle_ratio = (statistics.total_idle_time * 100) / op_time;
     }
+    sprintf(buffer, "Idle: %lu%%", idle_ratio);
+    display_text(0, 2, buffer);
 
     // Temperature stability (presses in tolerance)
+    uint32_t stability = 0;
     if (statistics.total_presses > 0)
     {
-        uint32_t stability = (statistics.presses_in_tolerance * 100) / statistics.total_presses;
-        sprintf(buffer, "Temp OK: %lu%%", stability);
-        display_text(0, 3, buffer);
+        stability = (statistics.presses_in_tolerance * 100) / statistics.total_presses;
     }
+    sprintf(buffer, "Temp OK: %lu%%", stability);
+    display_text(0, 3, buffer);
 
     display_flush();
 }
