@@ -660,6 +660,12 @@ void load_persistent_data(void)
                      print_run.time_elapsed);
         }
     }
+
+    // Always initialize with Cotton profile settings
+    settings.target_temp = 140.0f;
+    settings.stage1_default = 15;
+    settings.stage2_default = 5;
+    ESP_LOGI(TAG, "System initialized with Cotton profile (140°C, 15s/5s)");
 }
 
 void save_persistent_data(void)
