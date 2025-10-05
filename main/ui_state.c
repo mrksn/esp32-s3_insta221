@@ -88,15 +88,24 @@ static float temperature_display_celsius = 0.0f;
 // Job setup state
 static int job_setup_selected_index = 0;
 static bool job_setup_edit_mode = false;
+static int job_setup_staged_num_shirts = 0;
+static printing_type_t job_setup_staged_print_type = SINGLE_SIDED;
+
+// Print type selection state
 static int print_type_selected_index = 0;
 
 // Settings submenu state
 static int timer_selected_index = 0;
 static bool timer_edit_mode = false;
+static int timer_staged_value = 0;
+
 static int temp_selected_index = 0;
 static bool temp_edit_mode = false;
+static float temp_staged_value = 0.0f;
+
 static int pid_selected_index = 0;
 static bool pid_edit_mode = false;
+static float pid_staged_value = 0.0f;
 
 // Press state tracking
 static bool was_press_closed_ui = false;
@@ -393,7 +402,7 @@ static void handle_job_setup_state(ui_event_t event)
     case UI_EVENT_BUTTON_BACK:
         if (job_setup_edit_mode)
         {
-            // Exit edit mode without saving
+            // Exit edit mode without saving - discard staged changes
             job_setup_edit_mode = false;
             ESP_LOGI(TAG, "Job setup edit cancelled");
         }
@@ -407,17 +416,17 @@ static void handle_job_setup_state(ui_event_t event)
     case UI_EVENT_ROTARY_CW:
         if (job_setup_edit_mode)
         {
-            // Adjust value
+            // Adjust staged value
             if (job_setup_selected_index == JOB_ITEM_NUM_SHIRTS)
             {
-                current_run->num_shirts = CLAMP(current_run->num_shirts + 1,
-                                                 NUM_SHIRTS_MIN,
-                                                 NUM_SHIRTS_MAX);
+                job_setup_staged_num_shirts = CLAMP(job_setup_staged_num_shirts + 1,
+                                                      NUM_SHIRTS_MIN,
+                                                      NUM_SHIRTS_MAX);
             }
             else if (job_setup_selected_index == JOB_ITEM_PRINT_TYPE)
             {
-                current_run->type = (current_run->type == SINGLE_SIDED) ?
-                                    DOUBLE_SIDED : SINGLE_SIDED;
+                job_setup_staged_print_type = (job_setup_staged_print_type == SINGLE_SIDED) ?
+                                               DOUBLE_SIDED : SINGLE_SIDED;
             }
         }
         else
@@ -431,17 +440,17 @@ static void handle_job_setup_state(ui_event_t event)
     case UI_EVENT_ROTARY_CCW:
         if (job_setup_edit_mode)
         {
-            // Adjust value
+            // Adjust staged value
             if (job_setup_selected_index == JOB_ITEM_NUM_SHIRTS)
             {
-                current_run->num_shirts = CLAMP(current_run->num_shirts - 1,
-                                                 NUM_SHIRTS_MIN,
-                                                 NUM_SHIRTS_MAX);
+                job_setup_staged_num_shirts = CLAMP(job_setup_staged_num_shirts - 1,
+                                                      NUM_SHIRTS_MIN,
+                                                      NUM_SHIRTS_MAX);
             }
             else if (job_setup_selected_index == JOB_ITEM_PRINT_TYPE)
             {
-                current_run->type = (current_run->type == SINGLE_SIDED) ?
-                                    DOUBLE_SIDED : SINGLE_SIDED;
+                job_setup_staged_print_type = (job_setup_staged_print_type == SINGLE_SIDED) ?
+                                               DOUBLE_SIDED : SINGLE_SIDED;
             }
         }
         else
@@ -455,14 +464,30 @@ static void handle_job_setup_state(ui_event_t event)
     case UI_EVENT_ROTARY_PUSH:
         if (job_setup_edit_mode)
         {
-            // Save and exit edit mode
+            // Commit staged changes and save
+            if (job_setup_selected_index == JOB_ITEM_NUM_SHIRTS)
+            {
+                current_run->num_shirts = job_setup_staged_num_shirts;
+            }
+            else if (job_setup_selected_index == JOB_ITEM_PRINT_TYPE)
+            {
+                current_run->type = job_setup_staged_print_type;
+            }
             save_persistent_data();
             job_setup_edit_mode = false;
             ESP_LOGI(TAG, "Job setup value saved");
         }
         else
         {
-            // Enter edit mode
+            // Enter edit mode - initialize staged value with current value
+            if (job_setup_selected_index == JOB_ITEM_NUM_SHIRTS)
+            {
+                job_setup_staged_num_shirts = current_run->num_shirts;
+            }
+            else if (job_setup_selected_index == JOB_ITEM_PRINT_TYPE)
+            {
+                job_setup_staged_print_type = current_run->type;
+            }
             job_setup_edit_mode = true;
             ESP_LOGI(TAG, "Entering edit mode for: %s", job_setup_items[job_setup_selected_index]);
         }
@@ -589,7 +614,7 @@ static void handle_timers_menu_state(ui_event_t event)
     case UI_EVENT_BUTTON_BACK:
         if (timer_edit_mode)
         {
-            // Exit edit mode without saving
+            // Exit edit mode without saving - discard staged changes
             timer_edit_mode = false;
             ESP_LOGI(TAG, "Timer edit cancelled");
         }
@@ -603,15 +628,8 @@ static void handle_timers_menu_state(ui_event_t event)
     case UI_EVENT_ROTARY_CW:
         if (timer_edit_mode)
         {
-            // Adjust value
-            if (timer_selected_index == TIMER_STAGE1)
-            {
-                current_settings->stage1_default = CLAMP(current_settings->stage1_default + 1, 1, 300);
-            }
-            else if (timer_selected_index == TIMER_STAGE2)
-            {
-                current_settings->stage2_default = CLAMP(current_settings->stage2_default + 1, 1, 300);
-            }
+            // Adjust staged value
+            timer_staged_value = CLAMP(timer_staged_value + 1, 1, 300);
         }
         else
         {
@@ -623,15 +641,8 @@ static void handle_timers_menu_state(ui_event_t event)
     case UI_EVENT_ROTARY_CCW:
         if (timer_edit_mode)
         {
-            // Adjust value
-            if (timer_selected_index == TIMER_STAGE1)
-            {
-                current_settings->stage1_default = CLAMP(current_settings->stage1_default - 1, 1, 300);
-            }
-            else if (timer_selected_index == TIMER_STAGE2)
-            {
-                current_settings->stage2_default = CLAMP(current_settings->stage2_default - 1, 1, 300);
-            }
+            // Adjust staged value
+            timer_staged_value = CLAMP(timer_staged_value - 1, 1, 300);
         }
         else
         {
@@ -643,14 +654,30 @@ static void handle_timers_menu_state(ui_event_t event)
     case UI_EVENT_ROTARY_PUSH:
         if (timer_edit_mode)
         {
-            // Save and exit edit mode
+            // Commit staged changes and save
+            if (timer_selected_index == TIMER_STAGE1)
+            {
+                current_settings->stage1_default = timer_staged_value;
+            }
+            else if (timer_selected_index == TIMER_STAGE2)
+            {
+                current_settings->stage2_default = timer_staged_value;
+            }
             save_persistent_data();
             timer_edit_mode = false;
             ESP_LOGI(TAG, "Timer value saved");
         }
         else
         {
-            // Enter edit mode
+            // Enter edit mode - initialize staged value with current value
+            if (timer_selected_index == TIMER_STAGE1)
+            {
+                timer_staged_value = current_settings->stage1_default;
+            }
+            else if (timer_selected_index == TIMER_STAGE2)
+            {
+                timer_staged_value = current_settings->stage2_default;
+            }
             timer_edit_mode = true;
             ESP_LOGI(TAG, "Entering edit mode for: %s", timer_menu_items[timer_selected_index]);
         }
@@ -716,7 +743,7 @@ static void handle_temperature_menu_state(ui_event_t event)
     case UI_EVENT_BUTTON_BACK:
         if (temp_edit_mode)
         {
-            // Exit edit mode without saving
+            // Exit edit mode without saving - discard staged changes
             temp_edit_mode = false;
             ESP_LOGI(TAG, "Temperature edit cancelled");
         }
@@ -730,10 +757,10 @@ static void handle_temperature_menu_state(ui_event_t event)
     case UI_EVENT_ROTARY_CW:
         if (temp_edit_mode)
         {
-            // Adjust value (only Target Temp is editable here)
+            // Adjust staged value (only Target Temp is editable here)
             if (temp_selected_index == TEMP_TARGET_TEMP)
             {
-                current_settings->target_temp = CLAMP(current_settings->target_temp + 1.0f, 0.0f, 250.0f);
+                temp_staged_value = CLAMP(temp_staged_value + 1.0f, 0.0f, 250.0f);
             }
         }
         else
@@ -746,10 +773,10 @@ static void handle_temperature_menu_state(ui_event_t event)
     case UI_EVENT_ROTARY_CCW:
         if (temp_edit_mode)
         {
-            // Adjust value (only Target Temp is editable here)
+            // Adjust staged value (only Target Temp is editable here)
             if (temp_selected_index == TEMP_TARGET_TEMP)
             {
-                current_settings->target_temp = CLAMP(current_settings->target_temp - 1.0f, 0.0f, 250.0f);
+                temp_staged_value = CLAMP(temp_staged_value - 1.0f, 0.0f, 250.0f);
             }
         }
         else
@@ -762,7 +789,8 @@ static void handle_temperature_menu_state(ui_event_t event)
     case UI_EVENT_ROTARY_PUSH:
         if (temp_edit_mode)
         {
-            // Save and exit edit mode
+            // Commit staged changes and save
+            current_settings->target_temp = temp_staged_value;
             save_persistent_data();
             temp_edit_mode = false;
             ESP_LOGI(TAG, "Temperature value saved");
@@ -772,7 +800,8 @@ static void handle_temperature_menu_state(ui_event_t event)
             // Check what was selected
             if (temp_selected_index == TEMP_TARGET_TEMP)
             {
-                // Enter edit mode
+                // Enter edit mode - initialize staged value with current value
+                temp_staged_value = current_settings->target_temp;
                 temp_edit_mode = true;
                 ESP_LOGI(TAG, "Entering edit mode for Target Temp");
             }
@@ -832,7 +861,7 @@ static void handle_pid_menu_state(ui_event_t event)
     case UI_EVENT_BUTTON_BACK:
         if (pid_edit_mode)
         {
-            // Exit edit mode without saving
+            // Exit edit mode without saving - discard staged changes
             pid_edit_mode = false;
             ESP_LOGI(TAG, "PID edit cancelled");
         }
@@ -846,18 +875,18 @@ static void handle_pid_menu_state(ui_event_t event)
     case UI_EVENT_ROTARY_CW:
         if (pid_edit_mode)
         {
-            // Adjust value
+            // Adjust staged value
             if (pid_selected_index == PID_KP)
             {
-                current_settings->pid_kp = CLAMP(current_settings->pid_kp + 0.1f, 0.0f, 100.0f);
+                pid_staged_value = CLAMP(pid_staged_value + 0.1f, 0.0f, 100.0f);
             }
             else if (pid_selected_index == PID_KI)
             {
-                current_settings->pid_ki = CLAMP(current_settings->pid_ki + 0.01f, 0.0f, 10.0f);
+                pid_staged_value = CLAMP(pid_staged_value + 0.01f, 0.0f, 10.0f);
             }
             else if (pid_selected_index == PID_KD)
             {
-                current_settings->pid_kd = CLAMP(current_settings->pid_kd + 0.1f, 0.0f, 100.0f);
+                pid_staged_value = CLAMP(pid_staged_value + 0.1f, 0.0f, 100.0f);
             }
         }
         else
@@ -870,18 +899,18 @@ static void handle_pid_menu_state(ui_event_t event)
     case UI_EVENT_ROTARY_CCW:
         if (pid_edit_mode)
         {
-            // Adjust value
+            // Adjust staged value
             if (pid_selected_index == PID_KP)
             {
-                current_settings->pid_kp = CLAMP(current_settings->pid_kp - 0.1f, 0.0f, 100.0f);
+                pid_staged_value = CLAMP(pid_staged_value - 0.1f, 0.0f, 100.0f);
             }
             else if (pid_selected_index == PID_KI)
             {
-                current_settings->pid_ki = CLAMP(current_settings->pid_ki - 0.01f, 0.0f, 10.0f);
+                pid_staged_value = CLAMP(pid_staged_value - 0.01f, 0.0f, 10.0f);
             }
             else if (pid_selected_index == PID_KD)
             {
-                current_settings->pid_kd = CLAMP(current_settings->pid_kd - 0.1f, 0.0f, 100.0f);
+                pid_staged_value = CLAMP(pid_staged_value - 0.1f, 0.0f, 100.0f);
             }
         }
         else
@@ -894,7 +923,19 @@ static void handle_pid_menu_state(ui_event_t event)
     case UI_EVENT_ROTARY_PUSH:
         if (pid_edit_mode)
         {
-            // Save and exit edit mode
+            // Commit staged changes and save
+            if (pid_selected_index == PID_KP)
+            {
+                current_settings->pid_kp = pid_staged_value;
+            }
+            else if (pid_selected_index == PID_KI)
+            {
+                current_settings->pid_ki = pid_staged_value;
+            }
+            else if (pid_selected_index == PID_KD)
+            {
+                current_settings->pid_kd = pid_staged_value;
+            }
             save_persistent_data();
             pid_edit_mode = false;
             ESP_LOGI(TAG, "PID value saved");
@@ -917,7 +958,19 @@ static void handle_pid_menu_state(ui_event_t event)
             }
             else
             {
-                // Enter edit mode
+                // Enter edit mode - initialize staged value with current value
+                if (pid_selected_index == PID_KP)
+                {
+                    pid_staged_value = current_settings->pid_kp;
+                }
+                else if (pid_selected_index == PID_KI)
+                {
+                    pid_staged_value = current_settings->pid_ki;
+                }
+                else if (pid_selected_index == PID_KD)
+                {
+                    pid_staged_value = current_settings->pid_kd;
+                }
                 pid_edit_mode = true;
                 ESP_LOGI(TAG, "Entering edit mode for: %s", pid_menu_items[pid_selected_index]);
             }
@@ -1055,22 +1108,24 @@ static void render_job_setup(void)
 
         if (i == JOB_ITEM_NUM_SHIRTS)
         {
+            int value = is_editing ? job_setup_staged_num_shirts : current_run->num_shirts;
             if (is_editing)
             {
-                snprintf(line, sizeof(line), "> %-9s  [%3d]", job_setup_items[i], current_run->num_shirts);
+                snprintf(line, sizeof(line), "> %-9s  [%3d]", job_setup_items[i], value);
             }
             else if (is_selected)
             {
-                snprintf(line, sizeof(line), "> %-9s   %3d ", job_setup_items[i], current_run->num_shirts);
+                snprintf(line, sizeof(line), "> %-9s   %3d ", job_setup_items[i], value);
             }
             else
             {
-                snprintf(line, sizeof(line), "  %-9s   %3d ", job_setup_items[i], current_run->num_shirts);
+                snprintf(line, sizeof(line), "  %-9s   %3d ", job_setup_items[i], value);
             }
         }
         else // JOB_ITEM_PRINT_TYPE
         {
-            const char *type_str = (current_run->type == SINGLE_SIDED) ? "SS" : "DS";
+            printing_type_t type = is_editing ? job_setup_staged_print_type : current_run->type;
+            const char *type_str = (type == SINGLE_SIDED) ? "SS" : "DS";
             if (is_editing)
             {
                 snprintf(line, sizeof(line), "> %-9s  [%3s]", job_setup_items[i], type_str);
@@ -1124,9 +1179,18 @@ static void render_timers_menu(void)
 
     for (uint8_t i = 0; i < TIMER_COUNT; i++)
     {
-        int value = (i == TIMER_STAGE1) ? current_settings->stage1_default : current_settings->stage2_default;
         bool is_selected = (i == timer_selected_index);
         bool is_editing = is_selected && timer_edit_mode;
+
+        int value;
+        if (is_editing)
+        {
+            value = timer_staged_value;
+        }
+        else
+        {
+            value = (i == TIMER_STAGE1) ? current_settings->stage1_default : current_settings->stage2_default;
+        }
 
         if (is_editing)
         {
@@ -1179,7 +1243,7 @@ static void render_temperature_menu(void)
 
         if (i == TEMP_TARGET_TEMP)
         {
-            int temp_int = (int)current_settings->target_temp;
+            int temp_int = is_editing ? (int)temp_staged_value : (int)current_settings->target_temp;
             if (is_editing)
             {
                 snprintf(line, sizeof(line), "> %-9s  [%3d]", temp_menu_items[i], temp_int);
@@ -1247,47 +1311,50 @@ static void render_pid_menu(void)
         }
         else if (i == PID_KP)
         {
+            float value = is_editing ? pid_staged_value : current_settings->pid_kp;
             if (is_editing)
             {
-                snprintf(line, sizeof(line), "> %-3s  [%5.2f]", pid_menu_items[i], current_settings->pid_kp);
+                snprintf(line, sizeof(line), "> %-3s  [%5.2f]", pid_menu_items[i], value);
             }
             else if (is_selected)
             {
-                snprintf(line, sizeof(line), "> %-3s   %5.2f ", pid_menu_items[i], current_settings->pid_kp);
+                snprintf(line, sizeof(line), "> %-3s   %5.2f ", pid_menu_items[i], value);
             }
             else
             {
-                snprintf(line, sizeof(line), "  %-3s   %5.2f ", pid_menu_items[i], current_settings->pid_kp);
+                snprintf(line, sizeof(line), "  %-3s   %5.2f ", pid_menu_items[i], value);
             }
         }
         else if (i == PID_KI)
         {
+            float value = is_editing ? pid_staged_value : current_settings->pid_ki;
             if (is_editing)
             {
-                snprintf(line, sizeof(line), "> %-3s  [%5.3f]", pid_menu_items[i], current_settings->pid_ki);
+                snprintf(line, sizeof(line), "> %-3s  [%5.3f]", pid_menu_items[i], value);
             }
             else if (is_selected)
             {
-                snprintf(line, sizeof(line), "> %-3s   %5.3f ", pid_menu_items[i], current_settings->pid_ki);
+                snprintf(line, sizeof(line), "> %-3s   %5.3f ", pid_menu_items[i], value);
             }
             else
             {
-                snprintf(line, sizeof(line), "  %-3s   %5.3f ", pid_menu_items[i], current_settings->pid_ki);
+                snprintf(line, sizeof(line), "  %-3s   %5.3f ", pid_menu_items[i], value);
             }
         }
         else // PID_KD
         {
+            float value = is_editing ? pid_staged_value : current_settings->pid_kd;
             if (is_editing)
             {
-                snprintf(line, sizeof(line), "> %-3s  [%5.2f]", pid_menu_items[i], current_settings->pid_kd);
+                snprintf(line, sizeof(line), "> %-3s  [%5.2f]", pid_menu_items[i], value);
             }
             else if (is_selected)
             {
-                snprintf(line, sizeof(line), "> %-3s   %5.2f ", pid_menu_items[i], current_settings->pid_kd);
+                snprintf(line, sizeof(line), "> %-3s   %5.2f ", pid_menu_items[i], value);
             }
             else
             {
-                snprintf(line, sizeof(line), "  %-3s   %5.2f ", pid_menu_items[i], current_settings->pid_kd);
+                snprintf(line, sizeof(line), "  %-3s   %5.2f ", pid_menu_items[i], value);
             }
         }
         display_text(0, i * 2, line);
