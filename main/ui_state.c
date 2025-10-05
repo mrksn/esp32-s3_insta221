@@ -454,7 +454,7 @@ static void handle_main_menu_state(ui_event_t event)
         break;
 
     case UI_EVENT_ROTARY_CCW:
-        menu_selected_item = MENU_WRAP(menu_selected_item - 1, MENU_COUNT);
+        menu_selected_item = MENU_WRAP((int)menu_selected_item - 1, MENU_COUNT);
         ESP_LOGI(TAG, "Menu item selected: %d", menu_selected_item);
         break;
 
