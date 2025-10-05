@@ -14,6 +14,7 @@ typedef enum
     UI_STATE_JOB_SETUP_ADJUST,   // Adjusting a job setup value
     UI_STATE_PRINT_TYPE_SELECT,  // Selecting print type
     UI_STATE_START_PRESSING,
+    UI_STATE_FREE_PRESS,         // NEW: Free press mode
     UI_STATE_PRESSING_ACTIVE,
     UI_STATE_STAGE1_DONE,        // NEW: Stage 1 done message
     UI_STATE_STAGE2_READY,       // NEW: Ready for Stage 2
@@ -37,6 +38,7 @@ typedef enum
 {
     MENU_JOB_SETUP,
     MENU_START_PRESSING,
+    MENU_FREE_PRESS,     // NEW: Free press mode without job tracking
     MENU_SETTINGS,
     MENU_STATISTICS,
     MENU_COUNT
@@ -104,6 +106,11 @@ void ui_set_state(ui_state_t state);
 void ui_select_menu_item(menu_item_t item);
 menu_item_t ui_get_selected_item(void);
 void ui_adjust_value(int8_t delta);
+
+// Free press mode
+bool ui_is_free_press_mode(void);
+void ui_increment_free_press_count(void);
+void ui_update_free_press_timing(uint32_t elapsed_time);
 
 // Display update
 void ui_update_display(void);

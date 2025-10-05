@@ -337,8 +337,8 @@ void ui_task(void *pvParameters)
                 state_transition_time = current_time;
                 ESP_LOGI(TAG, "Starting next cycle from cycle complete");
             }
-            // Press closed - validate conditions before starting new cycle
-            else if (current_ui_state == UI_STATE_START_PRESSING && validate_cycle_safety())
+            // Press closed - validate conditions before starting new cycle (job mode or free press mode)
+            else if ((current_ui_state == UI_STATE_START_PRESSING || current_ui_state == UI_STATE_FREE_PRESS) && validate_cycle_safety())
             {
                 press_safety_locked = false; // Release safety lock for validated cycle
                 start_pressing_cycle();
@@ -346,7 +346,7 @@ void ui_task(void *pvParameters)
                 state_transition_time = current_time;
                 ESP_LOGI(TAG, "Press cycle started with all safety checks passed");
             }
-            else if (current_ui_state != UI_STATE_START_PRESSING && !pressing_active && current_ui_state != UI_STATE_CYCLE_COMPLETE)
+            else if (current_ui_state != UI_STATE_START_PRESSING && current_ui_state != UI_STATE_FREE_PRESS && !pressing_active && current_ui_state != UI_STATE_CYCLE_COMPLETE)
             {
                 ESP_LOGW(TAG, "Press closed but not in valid state (current: %d)", current_ui_state);
             }
@@ -729,7 +729,7 @@ void update_pressing_cycle(void)
     }
     else if (current_stage == STAGE2 && stage_elapsed >= current_cycle.stage2_duration)
     {
-        // Stage 2 complete - show DONE message
+        // Stage 2 complete - show DONE message until press opens
         ui_set_state(UI_STATE_STAGE2_DONE);
         state_transition_time = current_time;
         ESP_LOGI(TAG, "Stage 2 complete - showing DONE message");
@@ -746,24 +746,45 @@ void complete_pressing_cycle(void)
         // Update cycle completion
         current_cycle.status = COMPLETE;
 
-        // Update print run progress
-        print_run.shirts_completed++;
-        print_run.progress = print_run.shirts_completed;
-
-        // Update total elapsed time from run start (includes time between shirts)
-        if (run_start_time > 0)
+        // Check if we're in free press mode
+        if (ui_is_free_press_mode())
         {
-            print_run.time_elapsed = current_time - run_start_time;
-        }
+            // Free press mode - just increment counter and track timing
+            ui_increment_free_press_count();
 
-        // Update average time per shirt
-        if (print_run.shirts_completed > 0)
+            // Update total elapsed time from run start
+            if (run_start_time > 0)
+            {
+                uint32_t total_elapsed = current_time - run_start_time;
+                ui_update_free_press_timing(total_elapsed);
+            }
+
+            ESP_LOGI(TAG, "Completed free press cycle in %d seconds", cycle_duration);
+        }
+        else
         {
-            print_run.avg_time_per_shirt = print_run.time_elapsed / print_run.shirts_completed;
-        }
+            // Job-tracked mode - update print run
+            print_run.shirts_completed++;
+            print_run.progress = print_run.shirts_completed;
 
-        // Save progress
-        save_persistent_data();
+            // Update total elapsed time from run start (includes time between shirts)
+            if (run_start_time > 0)
+            {
+                print_run.time_elapsed = current_time - run_start_time;
+            }
+
+            // Update average time per shirt
+            if (print_run.shirts_completed > 0)
+            {
+                print_run.avg_time_per_shirt = print_run.time_elapsed / print_run.shirts_completed;
+            }
+
+            // Save progress
+            save_persistent_data();
+
+            ESP_LOGI(TAG, "Completed pressing cycle for shirt %d in %d seconds",
+                     current_cycle.shirt_id, cycle_duration);
+        }
 
         // Reset cycle state
         pressing_active = false;
@@ -773,9 +794,6 @@ void complete_pressing_cycle(void)
 
         // Show statistics after cycle complete
         ui_set_state(UI_STATE_CYCLE_COMPLETE);
-
-        ESP_LOGI(TAG, "Completed pressing cycle for shirt %d in %d seconds",
-                 current_cycle.shirt_id, cycle_duration);
     }
 }
 

@@ -37,6 +37,7 @@ static bool display_needs_update = true;
 static const char *main_menu_items[] = {
     "Job Setup",
     "Start Pressing",
+    "Free Press",
     "Settings",
     "Statistics"
 };
@@ -113,6 +114,12 @@ static float pid_staged_value = 0.0f;
 // Press state tracking
 static bool was_press_closed_ui = false;
 
+// Free press mode tracking
+static bool free_press_mode = false;         ///< Whether we're in free press mode (no job tracking)
+static uint16_t free_press_count = 0;        ///< Number of shirts pressed in free press mode
+static uint32_t free_press_time_elapsed = 0; ///< Time elapsed in free press mode
+static uint32_t free_press_avg_time = 0;     ///< Average time per shirt in free press mode
+
 // External functions from main.c
 extern bool start_pid_autotune(float target_temp);
 extern bool is_pid_autotuning(void);
@@ -134,6 +141,7 @@ static void handle_temp_adjust_state(ui_event_t event);
 static void handle_pid_menu_state(ui_event_t event);
 static void handle_pid_adjust_state(ui_event_t event);
 static void handle_start_pressing_state(ui_event_t event);
+static void handle_free_press_state(ui_event_t event);         // NEW
 static void handle_pressing_active_state(ui_event_t event);
 static void handle_statistics_state(ui_event_t event);
 static void handle_autotune_state(ui_event_t event);           // NEW
@@ -152,6 +160,7 @@ static void render_temp_adjust(void);
 static void render_pid_menu(void);
 static void render_pid_adjust(void);
 static void render_start_pressing(void);
+static void render_free_press(void);          // NEW
 static void render_pressing_active(void);
 static void render_statistics(void);
 static void render_autotune(void);           // NEW
@@ -186,6 +195,7 @@ static const state_handler_entry_t state_handlers[] = {
     {UI_STATE_PID_MENU, handle_pid_menu_state, render_pid_menu, "PID Control"},
     {UI_STATE_PID_ADJUST, handle_pid_adjust_state, render_pid_adjust, "Adjust PID"},
     {UI_STATE_START_PRESSING, handle_start_pressing_state, render_start_pressing, "Start Pressing"},
+    {UI_STATE_FREE_PRESS, handle_free_press_state, render_free_press, "Free Press"},
     {UI_STATE_PRESSING_ACTIVE, handle_pressing_active_state, render_pressing_active, "Pressing Active"},
     {UI_STATE_STAGE1_DONE, NULL, render_stage1_done, "Stage 1 Done"},
     {UI_STATE_STAGE2_READY, NULL, render_stage2_ready, "Stage 2 Ready"},
@@ -339,6 +349,25 @@ void ui_select_menu_item(menu_item_t item)
     menu_selected_item = item;
 }
 
+bool ui_is_free_press_mode(void)
+{
+    return free_press_mode;
+}
+
+void ui_increment_free_press_count(void)
+{
+    free_press_count++;
+}
+
+void ui_update_free_press_timing(uint32_t elapsed_time)
+{
+    free_press_time_elapsed = elapsed_time;
+    if (free_press_count > 0)
+    {
+        free_press_avg_time = free_press_time_elapsed / free_press_count;
+    }
+}
+
 menu_item_t ui_get_selected_item(void)
 {
     return menu_selected_item;
@@ -380,6 +409,11 @@ static void handle_main_menu_state(ui_event_t event)
             break;
         case MENU_START_PRESSING:
             ui_current_state = UI_STATE_START_PRESSING;
+            free_press_mode = false;  // Job-tracked mode
+            break;
+        case MENU_FREE_PRESS:
+            ui_current_state = UI_STATE_FREE_PRESS;
+            free_press_mode = true;   // Free press mode
             break;
         case MENU_SETTINGS:
             ui_current_state = UI_STATE_SETTINGS_MENU;
@@ -1059,6 +1093,25 @@ static void handle_start_pressing_state(ui_event_t event)
     }
 }
 
+static void handle_free_press_state(ui_event_t event)
+{
+    switch (event)
+    {
+    case UI_EVENT_PRESS_CLOSED:
+        // Don't transition here - let main.c handle the press detection and start the cycle
+        // main.c will transition to UI_STATE_PRESSING_ACTIVE when cycle starts
+        break;
+
+    case UI_EVENT_BUTTON_BACK:
+        ui_current_state = UI_STATE_MAIN_MENU;
+        free_press_mode = false;
+        break;
+
+    default:
+        break;
+    }
+}
+
 static void handle_pressing_active_state(ui_event_t event)
 {
     switch (event)
@@ -1404,6 +1457,22 @@ static void render_start_pressing(void)
     display_flush();
 }
 
+static void render_free_press(void)
+{
+    char buffer[32];
+
+    display_clear();
+    display_text(0, 0, "Free Press Mode");
+    sprintf(buffer, "Temp: %.1f/%.1f C",
+            temperature_display_celsius,
+            current_settings->target_temp);
+    display_text(0, 1, buffer);
+    sprintf(buffer, "Pressed: %d", free_press_count);
+    display_text(0, 2, buffer);
+    display_text(0, 3, "Close press to start");
+    display_flush();
+}
+
 static void render_pressing_active(void)
 {
     extern pressing_cycle_t current_cycle;
@@ -1439,8 +1508,23 @@ static void render_pressing_active(void)
             return;  // Don't show countdown when waiting
         }
 
-        // Draw stage label at top
+        // Draw stage label at top left
         display_text(0, 0, (current_stage == STAGE1) ? "Stage 1" : "Stage 2");
+
+        // Display shirt number on the right side of line 0 (right-aligned)
+        char shirt_buffer[10];
+        if (free_press_mode)
+        {
+            sprintf(shirt_buffer, "# %d", free_press_count + 1);
+        }
+        else
+        {
+            sprintf(shirt_buffer, "# %d", current_cycle.shirt_id);
+        }
+        // Right-align: OLED is 128 pixels wide, ~6 pixels per char, 21 chars total width
+        // Position shirt number at column 15 (leaves room for "# 999")
+        display_text(15, 0, shirt_buffer);
+
         screen_initialized = true;
         last_stage = current_stage;
         last_time_remaining = 9999; // Force update
@@ -1484,16 +1568,38 @@ static void render_statistics(void)
     char buffer[32];
 
     display_clear();
-    display_text(0, 0, "Statistics");
-    sprintf(buffer, "Completed: %d/%d",
-            current_run->shirts_completed,
-            current_run->num_shirts);
+
+    // Title
+    display_text(0, 0, "=== Statistics ===");
+
+    // Completed shirts (only show target if not in free press mode)
+    if (free_press_mode)
+    {
+        sprintf(buffer, "Pressed: %d", free_press_count);
+    }
+    else
+    {
+        sprintf(buffer, "Done: %d / %d",
+                current_run->shirts_completed,
+                current_run->num_shirts);
+    }
     display_text(0, 1, buffer);
-    sprintf(buffer, "Avg time: %lu s", current_run->avg_time_per_shirt);
-    display_text(0, 2, buffer);
+
+    // Average time per shirt
+    uint32_t avg_time = free_press_mode ? free_press_avg_time : current_run->avg_time_per_shirt;
+    if (avg_time > 0)
+    {
+        sprintf(buffer, "Avg: %lu s/shirt", avg_time);
+        display_text(0, 2, buffer);
+    }
+
     // DEBUG: Display heat-up time for PID tuning (remove in final version)
-    sprintf(buffer, "Heat-up: %lu s", time_to_target_temp);
-    display_text(0, 3, buffer);
+    if (time_to_target_temp > 0)
+    {
+        sprintf(buffer, "Heat: %lu s", time_to_target_temp);
+        display_text(0, 3, buffer);
+    }
+
     display_flush();
 }
 
@@ -1609,13 +1715,32 @@ static void render_cycle_complete(void)
 
     display_clear();
     display_invert(false);
-    display_text(0, 0, "Cycle Complete!");
-    sprintf(buffer, "Completed: %d/%d",
-            print_run.shirts_completed,
-            print_run.num_shirts);
-    display_text(0, 1, buffer);
-    sprintf(buffer, "Avg: %lu sec", print_run.avg_time_per_shirt);
-    display_text(0, 2, buffer);
+
+    if (free_press_mode)
+    {
+        display_text(0, 0, "Press Complete!");
+        sprintf(buffer, "Count: %d", free_press_count);
+        display_text(0, 1, buffer);
+        if (free_press_avg_time > 0)
+        {
+            sprintf(buffer, "Avg: %lu s", free_press_avg_time);
+            display_text(0, 2, buffer);
+        }
+    }
+    else
+    {
+        display_text(0, 0, "Cycle Complete!");
+        sprintf(buffer, "Done: %d / %d",
+                print_run.shirts_completed,
+                print_run.num_shirts);
+        display_text(0, 1, buffer);
+        if (print_run.avg_time_per_shirt > 0)
+        {
+            sprintf(buffer, "Avg: %lu s", print_run.avg_time_per_shirt);
+            display_text(0, 2, buffer);
+        }
+    }
+
     display_text(0, 3, "Close for next");
     display_flush();
 }
