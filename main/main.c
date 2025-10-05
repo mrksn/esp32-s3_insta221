@@ -368,9 +368,19 @@ void ui_task(void *pvParameters)
             }
             else if (pressing_active)
             {
-                if (current_stage == STAGE2)
+                if (current_stage == STAGE1)
                 {
-                    // Stage 2 was active - complete the cycle
+                    // Stage 1 early release - finish stage 1 and go to READY
+                    ESP_LOGI(TAG, "Stage 1 early release detected");
+                    current_stage = IDLE;
+                    current_cycle.status = IDLE;
+                    ui_set_state(UI_STATE_STAGE2_READY);
+                    state_transition_time = current_time;
+                }
+                else if (current_stage == STAGE2)
+                {
+                    // Stage 2 early release or normal completion - complete the cycle
+                    ESP_LOGI(TAG, "Stage 2 press opened - completing cycle");
                     complete_pressing_cycle();
                     press_safety_locked = true; // Re-engage safety lock
                     state_transition_time = current_time;

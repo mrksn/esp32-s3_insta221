@@ -187,6 +187,10 @@ static void handle_start_pressing_state(ui_event_t event);
 static void handle_free_press_state(ui_event_t event);         // NEW
 static void handle_profiles_menu_state(ui_event_t event);      // NEW
 static void handle_pressing_active_state(ui_event_t event);
+static void handle_stage1_done_state(ui_event_t event);        // NEW
+static void handle_stage2_ready_state(ui_event_t event);       // NEW
+static void handle_stage2_done_state(ui_event_t event);        // NEW
+static void handle_cycle_complete_state(ui_event_t event);     // NEW
 static void handle_statistics_state(ui_event_t event);
 static void handle_stats_production_state(ui_event_t event);   // NEW
 static void handle_stats_temperature_state(ui_event_t event);  // NEW
@@ -253,10 +257,10 @@ static const state_handler_entry_t state_handlers[] = {
     {UI_STATE_FREE_PRESS, handle_free_press_state, render_free_press, "Free Press"},
     {UI_STATE_PROFILES_MENU, handle_profiles_menu_state, render_profiles_menu, "Profiles"},
     {UI_STATE_PRESSING_ACTIVE, handle_pressing_active_state, render_pressing_active, "Pressing Active"},
-    {UI_STATE_STAGE1_DONE, NULL, render_stage1_done, "Stage 1 Done"},
-    {UI_STATE_STAGE2_READY, NULL, render_stage2_ready, "Stage 2 Ready"},
-    {UI_STATE_STAGE2_DONE, NULL, render_stage2_done, "Stage 2 Done"},
-    {UI_STATE_CYCLE_COMPLETE, NULL, render_cycle_complete, "Cycle Complete"},
+    {UI_STATE_STAGE1_DONE, handle_stage1_done_state, render_stage1_done, "Stage 1 Done"},
+    {UI_STATE_STAGE2_READY, handle_stage2_ready_state, render_stage2_ready, "Stage 2 Ready"},
+    {UI_STATE_STAGE2_DONE, handle_stage2_done_state, render_stage2_done, "Stage 2 Done"},
+    {UI_STATE_CYCLE_COMPLETE, handle_cycle_complete_state, render_cycle_complete, "Cycle Complete"},
     {UI_STATE_STATISTICS, handle_statistics_state, render_statistics, "Statistics"},
     {UI_STATE_STATS_PRODUCTION, handle_stats_production_state, render_stats_production, "Production Stats"},
     {UI_STATE_STATS_TEMPERATURE, handle_stats_temperature_state, render_stats_temperature, "Temperature Stats"},
@@ -1284,6 +1288,62 @@ static void handle_pressing_active_state(ui_event_t event)
 
     case UI_EVENT_BUTTON_BACK:
         ui_current_state = UI_STATE_MAIN_MENU;
+        break;
+
+    default:
+        break;
+    }
+}
+
+static void handle_stage1_done_state(ui_event_t event)
+{
+    switch (event)
+    {
+    case UI_EVENT_BUTTON_BACK:
+        ui_current_state = UI_STATE_MAIN_MENU;
+        ESP_LOGI(TAG, "Stage 1 done - returning to main menu");
+        break;
+
+    default:
+        break;
+    }
+}
+
+static void handle_stage2_ready_state(ui_event_t event)
+{
+    switch (event)
+    {
+    case UI_EVENT_BUTTON_BACK:
+        ui_current_state = UI_STATE_MAIN_MENU;
+        ESP_LOGI(TAG, "Stage 2 ready - returning to main menu");
+        break;
+
+    default:
+        break;
+    }
+}
+
+static void handle_stage2_done_state(ui_event_t event)
+{
+    switch (event)
+    {
+    case UI_EVENT_BUTTON_BACK:
+        ui_current_state = UI_STATE_MAIN_MENU;
+        ESP_LOGI(TAG, "Stage 2 done - returning to main menu");
+        break;
+
+    default:
+        break;
+    }
+}
+
+static void handle_cycle_complete_state(ui_event_t event)
+{
+    switch (event)
+    {
+    case UI_EVENT_BUTTON_BACK:
+        ui_current_state = UI_STATE_MAIN_MENU;
+        ESP_LOGI(TAG, "Cycle complete - returning to main menu");
         break;
 
     default:
