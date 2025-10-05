@@ -319,10 +319,16 @@ void ui_update(float current_temp)
         display_needs_update = true;
     }
 
-    // Always update display during heat up to show progress
+    // Update display during heat up only once per second to reduce flicker
+    static uint32_t last_heat_up_update = 0;
     if (ui_current_state == UI_STATE_HEAT_UP)
     {
-        display_needs_update = true;
+        uint32_t current_time_ms = esp_timer_get_time() / 1000;
+        if (current_time_ms - last_heat_up_update >= 1000) // Update once per second
+        {
+            display_needs_update = true;
+            last_heat_up_update = current_time_ms;
+        }
     }
 
     // Check for button release during reset stats (even if not updating display)
@@ -549,6 +555,7 @@ static void handle_main_menu_state(ui_event_t event)
             heat_up_start_time = esp_timer_get_time() / 1000000;
             heat_up_start_temp = temperature_display_celsius;
             heat_up_heating_enabled = heating_is_active();
+            display_needs_update = true; // Force immediate screen update
             ESP_LOGI(TAG, "Heat up mode activated");
             break;
         case MENU_PROFILES:
@@ -2407,27 +2414,33 @@ static void render_heat_up(void)
     char buffer[32];
     static bool heating_was_active = false;
     static uint32_t last_update_sec = 0;
+    static bool screen_initialized = false;
 
     bool heating_active = heating_is_active();
     uint32_t current_time = esp_timer_get_time() / 1000000;
     uint32_t elapsed_sec = current_time - heat_up_start_time;
 
-    // Only redraw if heating state changed or second changed (reduce flickering)
-    if (heating_active != heating_was_active || elapsed_sec != last_update_sec)
+    // Check if heating is enabled
+    if (!heating_active)
     {
-        display_clear();
-
-        // Check if heating is enabled
-        if (!heating_active)
+        // Only redraw if heating state changed to avoid flicker
+        if (heating_was_active || !screen_initialized)
         {
-            // Heating switch is OFF - prompt user to enable it
+            display_clear();
             display_text(0, 0, "Heating Disabled!");
             display_text(0, 2, "Please toggle");
             display_text(0, 3, "heating switch");
             display_flush();
             heating_was_active = false;
-            return;
+            screen_initialized = true;
         }
+        return;
+    }
+
+    // Only redraw if heating state changed or second changed (reduce flickering)
+    if (heating_active != heating_was_active || elapsed_sec != last_update_sec)
+    {
+        display_clear();
 
         // Heating is ON - show heat up progress
         display_text(0, 0, "Heating Up");
