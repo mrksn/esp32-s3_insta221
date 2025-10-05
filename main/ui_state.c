@@ -85,6 +85,9 @@ static print_run_t *current_run = NULL;
 // Current temperature for display
 static float temperature_display_celsius = 0.0f;
 
+// External variables for heat-up time tracking (DEBUG - for PID tuning)
+extern uint32_t time_to_target_temp;
+
 // Job setup state
 static int job_setup_selected_index = 0;
 static bool job_setup_edit_mode = false;
@@ -1488,6 +1491,9 @@ static void render_statistics(void)
     display_text(0, 1, buffer);
     sprintf(buffer, "Avg time: %lu s", current_run->avg_time_per_shirt);
     display_text(0, 2, buffer);
+    // DEBUG: Display heat-up time for PID tuning (remove in final version)
+    sprintf(buffer, "Heat-up: %lu s", time_to_target_temp);
+    display_text(0, 3, buffer);
     display_flush();
 }
 

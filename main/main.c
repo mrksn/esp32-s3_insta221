@@ -86,6 +86,11 @@ uint32_t cycle_start_time = 0;       ///< Timestamp when current cycle started
 uint32_t stage_start_time = 0;       ///< Timestamp when current stage started
 cycle_status_t current_stage = IDLE; ///< Current cycle stage
 
+// Temperature tracking for debugging
+uint32_t system_start_time = 0;      ///< Timestamp when system started (for heat-up tracking)
+uint32_t time_to_target_temp = 0;    ///< Time in seconds to reach target temperature (0 = not yet reached)
+bool target_temp_reached = false;    ///< Whether target temperature has been reached for the first time
+
 // Error state and safety management
 bool emergency_shutdown = false;      ///< Emergency shutdown flag
 uint8_t sensor_error_count = 0;       ///< Count of consecutive sensor read failures
@@ -236,6 +241,11 @@ void app_main(void)
     sensor_error_count = 0;
     last_temp_reading = esp_timer_get_time() / 1000000;
     press_safety_locked = true; // Start with safety lock engaged
+
+    // Initialize temperature tracking for heat-up time measurement
+    system_start_time = esp_timer_get_time() / 1000000;
+    target_temp_reached = false;
+    time_to_target_temp = 0;
     pause_mode = false;         // Start without pause
     heating_was_on = false;     // Start with heating off
     last_press_state = false;   // Initialize press state
@@ -602,6 +612,15 @@ void load_persistent_data(void)
             print_run.shirts_completed = 0;
             print_run.avg_time_per_shirt = 0;
             run_start_time = 0;
+        }
+        else if (print_run.shirts_completed > 0 && print_run.time_elapsed > 0)
+        {
+            // Reconstruct run_start_time from saved time_elapsed
+            // This ensures continuity after a reboot mid-run
+            uint32_t current_time = esp_timer_get_time() / 1000000;
+            run_start_time = current_time - print_run.time_elapsed;
+            ESP_LOGI(TAG, "Reconstructed run_start_time from saved data (elapsed: %lu s)",
+                     print_run.time_elapsed);
         }
     }
 }
@@ -1029,6 +1048,15 @@ void update_led_indicators(void)
                       (current_temperature <= (settings.target_temp + 5.0f)) &&
                       !emergency_shutdown;
     controls_set_led_green(temp_ready);
+
+    // Track time to reach target temperature for the first time (for PID debugging)
+    if (!target_temp_reached && temp_ready && system_start_time > 0)
+    {
+        uint32_t current_time = esp_timer_get_time() / 1000000;
+        time_to_target_temp = current_time - system_start_time;
+        target_temp_reached = true;
+        ESP_LOGI(TAG, "Target temperature reached in %lu seconds", time_to_target_temp);
+    }
 
     // Blue LED: System is in pause mode
     controls_set_led_blue(pause_mode);
