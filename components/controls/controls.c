@@ -237,6 +237,12 @@ bool controls_is_press_closed(void)
     return closed;
 }
 
+bool controls_is_rotary_button_pressed(void)
+{
+    // Read current GPIO level - button is active low (pressed = 0)
+    return gpio_get_level(ROTARY_BUTTON_PIN) == 0;
+}
+
 void controls_set_led_green(bool on)
 {
     gpio_set_level(LED_GREEN_PIN, on ? 1 : 0);

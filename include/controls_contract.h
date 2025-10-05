@@ -36,6 +36,9 @@ rotary_event_t controls_get_rotary_event(void);
 // Check reed switch (press closed)
 bool controls_is_press_closed(void);
 
+// Check if rotary encoder button is currently pressed
+bool controls_is_rotary_button_pressed(void);
+
 // LED indicator control
 void controls_set_led_green(bool on);  // Temperature ready indicator
 void controls_set_led_blue(bool on);   // Pause mode indicator

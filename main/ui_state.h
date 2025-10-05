@@ -35,6 +35,7 @@ typedef enum
     UI_STATE_STATS_KPIS,         // KPIs statistics view
     UI_STATE_AUTOTUNE,           // NEW: Auto-tune PID state
     UI_STATE_AUTOTUNE_COMPLETE,  // NEW: Auto-tune results display
+    UI_STATE_RESET_STATS,        // NEW: Reset statistics state
     UI_STATE_ERROR
 } ui_state_t;
 
@@ -47,6 +48,7 @@ typedef enum
     MENU_PROFILES,       // NEW: Material profiles
     MENU_SETTINGS,
     MENU_STATISTICS,
+    MENU_RESET_STATS,    // NEW: Reset statistics
     MENU_COUNT
 } menu_item_t;
 

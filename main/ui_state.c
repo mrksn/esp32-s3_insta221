@@ -9,16 +9,18 @@
  * @date 2025
  */
 
+#include <string.h>
+#include <stdio.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include <esp_err.h>
 #include "ui_state.h"
 #include "controls_contract.h"
 #include "display_contract.h"
 #include "data_model.h"
 #include "system_config.h"
-#include "esp_log.h"
-#include "esp_timer.h"
-#include <esp_err.h>
-#include <string.h>
-#include <stdio.h>
 
 static const char *TAG = "ui_state";
 
@@ -40,7 +42,8 @@ static const char *main_menu_items[] = {
     "Free Press",
     "Profiles",
     "Settings",
-    "Statistics"
+    "Statistics",
+    "Reset Stats"
 };
 
 static const char *profile_items[] = {
@@ -155,6 +158,11 @@ static uint32_t free_press_time_elapsed = 0;      ///< Time elapsed in free pres
 static uint32_t free_press_avg_time = 0;          ///< Average time per shirt in free press mode
 static uint32_t free_press_run_start_time = 0;    ///< When free press session started
 
+// Reset statistics state tracking
+static int reset_stats_selected_index = 0;        ///< Selected reset option (0=Job, 1=All)
+static uint32_t reset_stats_press_start_time = 0; ///< When encoder push started
+static bool reset_stats_button_pressed = false;   ///< Whether button is currently pressed
+
 // External functions from main.c
 extern bool start_pid_autotune(float target_temp);
 extern bool is_pid_autotuning(void);
@@ -186,6 +194,7 @@ static void handle_stats_events_state(ui_event_t event);       // NEW
 static void handle_stats_kpis_state(ui_event_t event);         // NEW
 static void handle_autotune_state(ui_event_t event);           // NEW
 static void handle_autotune_complete_state(ui_event_t event);  // NEW
+static void handle_reset_stats_state(ui_event_t event);        // NEW
 
 // Display rendering functions
 static void render_main_menu(void);
@@ -210,6 +219,7 @@ static void render_stats_events(void);       // NEW
 static void render_stats_kpis(void);         // NEW
 static void render_autotune(void);           // NEW
 static void render_autotune_complete(void);  // NEW
+static void render_reset_stats(void);        // NEW
 static void render_stage1_done(void);        // NEW
 static void render_stage2_ready(void);       // NEW
 static void render_stage2_done(void);        // NEW
@@ -254,6 +264,7 @@ static const state_handler_entry_t state_handlers[] = {
     {UI_STATE_STATS_KPIS, handle_stats_kpis_state, render_stats_kpis, "KPI Stats"},
     {UI_STATE_AUTOTUNE, handle_autotune_state, render_autotune, "Auto-Tune"},
     {UI_STATE_AUTOTUNE_COMPLETE, handle_autotune_complete_state, render_autotune_complete, "Results"},
+    {UI_STATE_RESET_STATS, handle_reset_stats_state, render_reset_stats, "Reset Stats"},
 };
 
 // =============================================================================
@@ -287,6 +298,12 @@ void ui_update(float current_temp)
 
     // Always update display during pressing to show countdown
     if (ui_current_state == UI_STATE_PRESSING_ACTIVE)
+    {
+        display_needs_update = true;
+    }
+
+    // Always update display during reset stats to show countdown
+    if (ui_current_state == UI_STATE_RESET_STATS && reset_stats_button_pressed)
     {
         display_needs_update = true;
     }
@@ -491,6 +508,9 @@ static void handle_main_menu_state(ui_event_t event)
             break;
         case MENU_STATISTICS:
             ui_current_state = UI_STATE_STATISTICS;
+            break;
+        case MENU_RESET_STATS:
+            ui_current_state = UI_STATE_RESET_STATS;
             break;
         default:
             break;
@@ -1968,6 +1988,179 @@ static void render_autotune_complete(void)
 
     display_text(0, 3, "Press any button");
     display_flush();
+}
+
+static void handle_reset_stats_state(ui_event_t event)
+{
+    switch (event)
+    {
+    case UI_EVENT_ROTARY_CW:
+        if (!reset_stats_button_pressed)
+        {
+            reset_stats_selected_index = (reset_stats_selected_index + 1) % 2;
+            ESP_LOGI(TAG, "Reset stats option: %d", reset_stats_selected_index);
+        }
+        break;
+
+    case UI_EVENT_ROTARY_CCW:
+        if (!reset_stats_button_pressed)
+        {
+            reset_stats_selected_index = (reset_stats_selected_index - 1 + 2) % 2;
+            ESP_LOGI(TAG, "Reset stats option: %d", reset_stats_selected_index);
+        }
+        break;
+
+    case UI_EVENT_ROTARY_PUSH:
+        // Button pressed - start tracking
+        if (!reset_stats_button_pressed)
+        {
+            reset_stats_button_pressed = true;
+            reset_stats_press_start_time = esp_timer_get_time() / 1000; // Convert to milliseconds
+            ESP_LOGI(TAG, "Reset stats button pressed for option %d", reset_stats_selected_index);
+        }
+        break;
+
+    case UI_EVENT_BUTTON_BACK:
+        // Cancel and return to main menu
+        reset_stats_button_pressed = false;
+        reset_stats_press_start_time = 0;
+        reset_stats_selected_index = 0;
+        ui_current_state = UI_STATE_MAIN_MENU;
+        ESP_LOGI(TAG, "Reset stats cancelled, returning to main menu");
+        break;
+
+    default:
+        break;
+    }
+}
+
+static void render_reset_stats(void)
+{
+    char buffer[64];
+
+    if (reset_stats_button_pressed)
+    {
+        // Check if button is still pressed
+        bool button_still_pressed = controls_is_rotary_button_pressed();
+
+        // Calculate elapsed time in milliseconds
+        uint32_t current_time = esp_timer_get_time() / 1000; // milliseconds
+        uint32_t elapsed_ms = current_time - reset_stats_press_start_time;
+
+        ESP_LOGI(TAG, "Render reset stats: pressed=%d, elapsed=%lu ms", button_still_pressed, elapsed_ms);
+
+        // Check if we've reached the trigger time (4 seconds)
+        if (elapsed_ms >= 4000 && button_still_pressed)
+        {
+            display_clear();
+
+            // Perform the reset based on selected option
+            if (reset_stats_selected_index == 0)
+            {
+                // Reset job and free press statistics only
+                ESP_LOGI(TAG, "Resetting job and free press statistics");
+                free_press_count = 0;
+                free_press_time_elapsed = 0;
+                free_press_avg_time = 0;
+                free_press_run_start_time = 0;
+
+                display_text(0, 1, "Job Stats Reset!");
+                display_flush();
+            }
+            else
+            {
+                // Wipe all statistics
+                ESP_LOGI(TAG, "Wiping all statistics");
+                memset(&statistics, 0, sizeof(statistics_t));
+                statistics.session_start_time = esp_timer_get_time() / 1000000;
+
+                // Also reset free press stats
+                free_press_count = 0;
+                free_press_time_elapsed = 0;
+                free_press_avg_time = 0;
+                free_press_run_start_time = 0;
+
+                display_text(0, 1, "All Stats Wiped!");
+                display_flush();
+            }
+
+            reset_stats_button_pressed = false;
+            reset_stats_press_start_time = 0;
+            reset_stats_selected_index = 0;
+
+            // Show message briefly then return
+            vTaskDelay(pdMS_TO_TICKS(1500));
+            ui_current_state = UI_STATE_MAIN_MENU;
+            return;
+        }
+        // Button was released before time elapsed
+        else if (!button_still_pressed)
+        {
+            // Released too early
+            ESP_LOGI(TAG, "Button released too early (%lu ms)", elapsed_ms);
+            reset_stats_button_pressed = false;
+            reset_stats_press_start_time = 0;
+        }
+        // Button still pressed, show appropriate message
+        else
+        {
+            // Track last displayed second to minimize redraws
+            static uint32_t last_countdown_sec = 999;
+
+            if (elapsed_ms < 1000)
+            {
+                // Still in the 1-second wait period
+                display_clear();
+                const char* option_text = (reset_stats_selected_index == 0) ? "Job Stats" : "ALL STATS";
+                sprintf(buffer, "Wiping %s", option_text);
+                display_text(0, 0, buffer);
+                display_text(0, 1, "");
+                display_text(0, 2, "Hold to confirm...");
+                display_text(0, 3, "");
+                display_flush();
+                last_countdown_sec = 999; // Reset for next countdown
+            }
+            else
+            {
+                // In countdown period (1000ms to 4000ms)
+                uint32_t countdown_ms = 4000 - elapsed_ms; // Remaining time in ms
+                uint32_t countdown_sec = (countdown_ms + 999) / 1000; // Round up to show 3, 2, 1
+
+                // Only redraw if the second changed
+                if (countdown_sec != last_countdown_sec)
+                {
+                    display_clear();
+                    // Use large text for countdown
+                    display_text(0, 0, "Wiping in:");
+                    sprintf(buffer, "%lu", countdown_sec);
+                    display_large_text(52, 20, buffer); // Center the number
+                    display_flush();
+                    last_countdown_sec = countdown_sec;
+                }
+            }
+        }
+    }
+    else
+    {
+        // Show menu with two options
+        display_clear();
+        display_text(0, 0, "Reset Statistics");
+
+        // Option 1: Wipe Job Stats
+        if (reset_stats_selected_index == 0)
+        {
+            display_text(0, 1, "> Wipe Job Stats");
+            display_text(0, 2, "  Wipe All Stats");
+        }
+        else
+        {
+            display_text(0, 1, "  Wipe Job Stats");
+            display_text(0, 2, "> Wipe All Stats");
+        }
+
+        display_text(0, 3, "Hold to wipe");
+        display_flush();
+    }
 }
 
 // New state render functions
