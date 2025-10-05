@@ -30,7 +30,7 @@ static const char *TAG = "ui_state";
 static ui_state_t ui_current_state = UI_STATE_INIT;
 static ui_state_t ui_previous_state = UI_STATE_INIT;
 static menu_item_t menu_selected_item = MENU_JOB_SETUP;
-static settings_item_t settings_selected_item = SETTINGS_TARGET_TEMP;
+static settings_item_t settings_selected_item = SETTINGS_TIMERS;
 static bool display_needs_update = true;
 
 // Menu items
@@ -42,13 +42,25 @@ static const char *main_menu_items[] = {
 };
 
 static const char *settings_menu_items[] = {
+    "Timers",
+    "Temperature"
+};
+
+static const char *timer_menu_items[] = {
+    "Stage 1",
+    "Stage 2"
+};
+
+static const char *temp_menu_items[] = {
     "Target Temp",
-    "Auto-Tune PID",   // NEW
-    "PID Kp",
-    "PID Ki",
-    "PID Kd",
-    "Stage1 Time",
-    "Stage2 Time"
+    "PID Control"
+};
+
+static const char *pid_menu_items[] = {
+    "Auto-Tune",
+    "Kp",
+    "Ki",
+    "Kd"
 };
 
 static const char *job_setup_items[] = {
@@ -75,6 +87,12 @@ static float temperature_display_celsius = 0.0f;
 
 // Job setup state
 static int job_setup_selected_index = 0;
+static int print_type_selected_index = 0;
+
+// Settings submenu state
+static int timer_selected_index = 0;
+static int temp_selected_index = 0;
+static int pid_selected_index = 0;
 
 // Press state tracking
 static bool was_press_closed_ui = false;
@@ -90,23 +108,33 @@ extern uint8_t get_autotune_progress(void);
 
 static void handle_main_menu_state(ui_event_t event);
 static void handle_job_setup_state(ui_event_t event);
+static void handle_job_setup_adjust_state(ui_event_t event);
+static void handle_print_type_select_state(ui_event_t event);
 static void handle_settings_menu_state(ui_event_t event);
-static void handle_settings_adjust_state(ui_event_t event);
+static void handle_timers_menu_state(ui_event_t event);
+static void handle_timer_adjust_state(ui_event_t event);
+static void handle_temperature_menu_state(ui_event_t event);
+static void handle_temp_adjust_state(ui_event_t event);
+static void handle_pid_menu_state(ui_event_t event);
+static void handle_pid_adjust_state(ui_event_t event);
 static void handle_start_pressing_state(ui_event_t event);
 static void handle_pressing_active_state(ui_event_t event);
 static void handle_statistics_state(ui_event_t event);
 static void handle_autotune_state(ui_event_t event);           // NEW
 static void handle_autotune_complete_state(ui_event_t event);  // NEW
-static void handle_stage1_done_state(ui_event_t event);        // NEW
-static void handle_stage2_ready_state(ui_event_t event);       // NEW
-static void handle_stage2_done_state(ui_event_t event);        // NEW
-static void handle_cycle_complete_state(ui_event_t event);     // NEW
 
 // Display rendering functions
 static void render_main_menu(void);
 static void render_job_setup(void);
+static void render_job_setup_adjust(void);
+static void render_print_type_select(void);
 static void render_settings_menu(void);
-static void render_settings_adjust(void);
+static void render_timers_menu(void);
+static void render_timer_adjust(void);
+static void render_temperature_menu(void);
+static void render_temp_adjust(void);
+static void render_pid_menu(void);
+static void render_pid_adjust(void);
 static void render_start_pressing(void);
 static void render_pressing_active(void);
 static void render_statistics(void);
@@ -132,8 +160,15 @@ typedef struct
 static const state_handler_entry_t state_handlers[] = {
     {UI_STATE_MAIN_MENU, handle_main_menu_state, render_main_menu, "Main Menu"},
     {UI_STATE_JOB_SETUP, handle_job_setup_state, render_job_setup, "Job Setup"},
+    {UI_STATE_JOB_SETUP_ADJUST, handle_job_setup_adjust_state, render_job_setup_adjust, "Adjust Job Setup"},
+    {UI_STATE_PRINT_TYPE_SELECT, handle_print_type_select_state, render_print_type_select, "Select Print Type"},
     {UI_STATE_SETTINGS_MENU, handle_settings_menu_state, render_settings_menu, "Settings"},
-    {UI_STATE_SETTINGS_ADJUST, handle_settings_adjust_state, render_settings_adjust, "Adjust Setting"},
+    {UI_STATE_TIMERS_MENU, handle_timers_menu_state, render_timers_menu, "Timers"},
+    {UI_STATE_TIMER_ADJUST, handle_timer_adjust_state, render_timer_adjust, "Adjust Timer"},
+    {UI_STATE_TEMPERATURE_MENU, handle_temperature_menu_state, render_temperature_menu, "Temperature"},
+    {UI_STATE_TEMP_ADJUST, handle_temp_adjust_state, render_temp_adjust, "Adjust Temperature"},
+    {UI_STATE_PID_MENU, handle_pid_menu_state, render_pid_menu, "PID Control"},
+    {UI_STATE_PID_ADJUST, handle_pid_adjust_state, render_pid_adjust, "Adjust PID"},
     {UI_STATE_START_PRESSING, handle_start_pressing_state, render_start_pressing, "Start Pressing"},
     {UI_STATE_PRESSING_ACTIVE, handle_pressing_active_state, render_pressing_active, "Pressing Active"},
     {UI_STATE_STAGE1_DONE, NULL, render_stage1_done, "Stage 1 Done"},
@@ -356,39 +391,100 @@ static void handle_job_setup_state(ui_event_t event)
         break;
 
     case UI_EVENT_ROTARY_CW:
+        job_setup_selected_index = MENU_WRAP(job_setup_selected_index + 1,
+                                              JOB_SETUP_ITEM_COUNT);
+        break;
+
+    case UI_EVENT_ROTARY_CCW:
+        job_setup_selected_index = MENU_WRAP(job_setup_selected_index - 1,
+                                              JOB_SETUP_ITEM_COUNT);
+        break;
+
+    case UI_EVENT_ROTARY_PUSH:
+        // Enter adjustment mode for selected item
+        if (job_setup_selected_index == JOB_ITEM_NUM_SHIRTS)
+        {
+            ui_current_state = UI_STATE_JOB_SETUP_ADJUST;
+            ESP_LOGI(TAG, "Entering adjustment mode for Num Shirts");
+        }
+        else if (job_setup_selected_index == JOB_ITEM_PRINT_TYPE)
+        {
+            // Enter print type selection menu
+            ui_current_state = UI_STATE_PRINT_TYPE_SELECT;
+            print_type_selected_index = current_run->type;  // Initialize with current value
+            ESP_LOGI(TAG, "Entering print type selection");
+        }
+        break;
+
+    default:
+        break;
+    }
+}
+
+static void handle_job_setup_adjust_state(ui_event_t event)
+{
+    switch (event)
+    {
+    case UI_EVENT_BUTTON_BACK:
+        // Exit adjustment mode without saving (but changes already applied)
+        ui_current_state = UI_STATE_JOB_SETUP;
+        ESP_LOGI(TAG, "Adjustment cancelled");
+        break;
+
+    case UI_EVENT_ROTARY_CW:
+        // Adjust value up based on selected setting
         if (job_setup_selected_index == JOB_ITEM_NUM_SHIRTS)
         {
             current_run->num_shirts = CLAMP(current_run->num_shirts + 1,
                                              NUM_SHIRTS_MIN,
                                              NUM_SHIRTS_MAX);
         }
-        else
-        {
-            job_setup_selected_index = MENU_WRAP(job_setup_selected_index + 1,
-                                                  JOB_SETUP_ITEM_COUNT);
-        }
         break;
 
     case UI_EVENT_ROTARY_CCW:
+        // Adjust value down based on selected setting
         if (job_setup_selected_index == JOB_ITEM_NUM_SHIRTS)
         {
             current_run->num_shirts = CLAMP(current_run->num_shirts - 1,
                                              NUM_SHIRTS_MIN,
                                              NUM_SHIRTS_MAX);
         }
-        else
-        {
-            job_setup_selected_index = MENU_WRAP(job_setup_selected_index - 1,
-                                                  JOB_SETUP_ITEM_COUNT);
-        }
         break;
 
     case UI_EVENT_ROTARY_PUSH:
-        if (job_setup_selected_index == JOB_ITEM_PRINT_TYPE)
-        {
-            current_run->type = (current_run->type == SINGLE_SIDED) ?
-                                DOUBLE_SIDED : SINGLE_SIDED;
-        }
+        // Exit adjustment mode and return to menu
+        ui_current_state = UI_STATE_JOB_SETUP;
+        ESP_LOGI(TAG, "Job setup value confirmed");
+        break;
+
+    default:
+        break;
+    }
+}
+
+static void handle_print_type_select_state(ui_event_t event)
+{
+    switch (event)
+    {
+    case UI_EVENT_BUTTON_BACK:
+        // Exit without saving changes
+        ui_current_state = UI_STATE_JOB_SETUP;
+        ESP_LOGI(TAG, "Print type selection cancelled");
+        break;
+
+    case UI_EVENT_ROTARY_CW:
+        print_type_selected_index = MENU_WRAP(print_type_selected_index + 1, 2);
+        break;
+
+    case UI_EVENT_ROTARY_CCW:
+        print_type_selected_index = MENU_WRAP(print_type_selected_index - 1, 2);
+        break;
+
+    case UI_EVENT_ROTARY_PUSH:
+        // Save selection and return to job setup
+        current_run->type = (printing_type_t)print_type_selected_index;
+        ui_current_state = UI_STATE_JOB_SETUP;
+        ESP_LOGI(TAG, "Print type set to: %d", current_run->type);
         break;
 
     default:
@@ -413,8 +509,186 @@ static void handle_settings_menu_state(ui_event_t event)
         break;
 
     case UI_EVENT_ROTARY_PUSH:
-        // Check if Auto-Tune PID was selected
-        if (settings_selected_item == SETTINGS_AUTOTUNE_PID)
+        if (settings_selected_item == SETTINGS_TIMERS)
+        {
+            ui_current_state = UI_STATE_TIMERS_MENU;
+            timer_selected_index = 0;
+            ESP_LOGI(TAG, "Entering Timers menu");
+        }
+        else if (settings_selected_item == SETTINGS_TEMPERATURE)
+        {
+            ui_current_state = UI_STATE_TEMPERATURE_MENU;
+            temp_selected_index = 0;
+            ESP_LOGI(TAG, "Entering Temperature menu");
+        }
+        break;
+
+    default:
+        break;
+    }
+}
+
+static void handle_timers_menu_state(ui_event_t event)
+{
+    switch (event)
+    {
+    case UI_EVENT_BUTTON_BACK:
+        ui_current_state = UI_STATE_SETTINGS_MENU;
+        break;
+
+    case UI_EVENT_ROTARY_CW:
+        timer_selected_index = MENU_WRAP(timer_selected_index + 1, TIMER_COUNT);
+        break;
+
+    case UI_EVENT_ROTARY_CCW:
+        timer_selected_index = MENU_WRAP(timer_selected_index - 1, TIMER_COUNT);
+        break;
+
+    case UI_EVENT_ROTARY_PUSH:
+        ui_current_state = UI_STATE_TIMER_ADJUST;
+        ESP_LOGI(TAG, "Entering timer adjustment for: %d", timer_selected_index);
+        break;
+
+    default:
+        break;
+    }
+}
+
+static void handle_timer_adjust_state(ui_event_t event)
+{
+    switch (event)
+    {
+    case UI_EVENT_BUTTON_BACK:
+        ui_current_state = UI_STATE_TIMERS_MENU;
+        ESP_LOGI(TAG, "Timer adjustment cancelled");
+        break;
+
+    case UI_EVENT_BUTTON_SAVE:
+        save_persistent_data();
+        ui_current_state = UI_STATE_TIMERS_MENU;
+        ESP_LOGI(TAG, "Timer saved to persistent storage");
+        break;
+
+    case UI_EVENT_ROTARY_CW:
+        if (timer_selected_index == TIMER_STAGE1)
+        {
+            current_settings->stage1_default = CLAMP(current_settings->stage1_default + 1, 1, 300);
+        }
+        else if (timer_selected_index == TIMER_STAGE2)
+        {
+            current_settings->stage2_default = CLAMP(current_settings->stage2_default + 1, 1, 300);
+        }
+        break;
+
+    case UI_EVENT_ROTARY_CCW:
+        if (timer_selected_index == TIMER_STAGE1)
+        {
+            current_settings->stage1_default = CLAMP(current_settings->stage1_default - 1, 1, 300);
+        }
+        else if (timer_selected_index == TIMER_STAGE2)
+        {
+            current_settings->stage2_default = CLAMP(current_settings->stage2_default - 1, 1, 300);
+        }
+        break;
+
+    case UI_EVENT_ROTARY_PUSH:
+        save_persistent_data();
+        ui_current_state = UI_STATE_TIMERS_MENU;
+        ESP_LOGI(TAG, "Timer confirmed and saved");
+        break;
+
+    default:
+        break;
+    }
+}
+
+static void handle_temperature_menu_state(ui_event_t event)
+{
+    switch (event)
+    {
+    case UI_EVENT_BUTTON_BACK:
+        ui_current_state = UI_STATE_SETTINGS_MENU;
+        break;
+
+    case UI_EVENT_ROTARY_CW:
+        temp_selected_index = MENU_WRAP(temp_selected_index + 1, TEMP_COUNT);
+        break;
+
+    case UI_EVENT_ROTARY_CCW:
+        temp_selected_index = MENU_WRAP(temp_selected_index - 1, TEMP_COUNT);
+        break;
+
+    case UI_EVENT_ROTARY_PUSH:
+        if (temp_selected_index == TEMP_TARGET_TEMP)
+        {
+            ui_current_state = UI_STATE_TEMP_ADJUST;
+            ESP_LOGI(TAG, "Entering target temp adjustment");
+        }
+        else if (temp_selected_index == TEMP_PID_CONTROL)
+        {
+            ui_current_state = UI_STATE_PID_MENU;
+            pid_selected_index = 0;
+            ESP_LOGI(TAG, "Entering PID Control menu");
+        }
+        break;
+
+    default:
+        break;
+    }
+}
+
+static void handle_temp_adjust_state(ui_event_t event)
+{
+    switch (event)
+    {
+    case UI_EVENT_BUTTON_BACK:
+        ui_current_state = UI_STATE_TEMPERATURE_MENU;
+        ESP_LOGI(TAG, "Temperature adjustment cancelled");
+        break;
+
+    case UI_EVENT_BUTTON_SAVE:
+        save_persistent_data();
+        ui_current_state = UI_STATE_TEMPERATURE_MENU;
+        ESP_LOGI(TAG, "Temperature saved to persistent storage");
+        break;
+
+    case UI_EVENT_ROTARY_CW:
+        current_settings->target_temp = CLAMP(current_settings->target_temp + 1.0f, 0.0f, 250.0f);
+        break;
+
+    case UI_EVENT_ROTARY_CCW:
+        current_settings->target_temp = CLAMP(current_settings->target_temp - 1.0f, 0.0f, 250.0f);
+        break;
+
+    case UI_EVENT_ROTARY_PUSH:
+        save_persistent_data();
+        ui_current_state = UI_STATE_TEMPERATURE_MENU;
+        ESP_LOGI(TAG, "Temperature confirmed and saved");
+        break;
+
+    default:
+        break;
+    }
+}
+
+static void handle_pid_menu_state(ui_event_t event)
+{
+    switch (event)
+    {
+    case UI_EVENT_BUTTON_BACK:
+        ui_current_state = UI_STATE_TEMPERATURE_MENU;
+        break;
+
+    case UI_EVENT_ROTARY_CW:
+        pid_selected_index = MENU_WRAP(pid_selected_index + 1, PID_COUNT);
+        break;
+
+    case UI_EVENT_ROTARY_CCW:
+        pid_selected_index = MENU_WRAP(pid_selected_index - 1, PID_COUNT);
+        break;
+
+    case UI_EVENT_ROTARY_PUSH:
+        if (pid_selected_index == PID_AUTOTUNE)
         {
             // Start auto-tune at current target temperature
             if (start_pid_autotune(current_settings->target_temp))
@@ -429,9 +703,8 @@ static void handle_settings_menu_state(ui_event_t event)
         }
         else
         {
-            // Enter adjustment mode for all other settings
-            ui_current_state = UI_STATE_SETTINGS_ADJUST;
-            ESP_LOGI(TAG, "Entering adjustment mode for setting: %d", settings_selected_item);
+            ui_current_state = UI_STATE_PID_ADJUST;
+            ESP_LOGI(TAG, "Entering PID adjustment for: %d", pid_selected_index);
         }
         break;
 
@@ -440,75 +713,55 @@ static void handle_settings_menu_state(ui_event_t event)
     }
 }
 
-static void handle_settings_adjust_state(ui_event_t event)
+static void handle_pid_adjust_state(ui_event_t event)
 {
     switch (event)
     {
     case UI_EVENT_BUTTON_BACK:
-        // Exit adjustment mode without saving
-        ui_current_state = UI_STATE_SETTINGS_MENU;
-        ESP_LOGI(TAG, "Adjustment cancelled");
+        ui_current_state = UI_STATE_PID_MENU;
+        ESP_LOGI(TAG, "PID adjustment cancelled");
         break;
 
     case UI_EVENT_BUTTON_SAVE:
-        // Save and exit adjustment mode
         save_persistent_data();
-        ui_current_state = UI_STATE_SETTINGS_MENU;
-        ESP_LOGI(TAG, "Settings saved to persistent storage");
+        ui_current_state = UI_STATE_PID_MENU;
+        ESP_LOGI(TAG, "PID saved to persistent storage");
         break;
 
     case UI_EVENT_ROTARY_CW:
-        // Adjust value up based on selected setting
-        switch (settings_selected_item)
+        if (pid_selected_index == PID_KP)
         {
-        case SETTINGS_TARGET_TEMP:
-            current_settings->target_temp = CLAMP(current_settings->target_temp + 1.0f, 0.0f, 250.0f);
-            break;
-        case SETTINGS_PID_KP:
             current_settings->pid_kp = CLAMP(current_settings->pid_kp + 0.1f, 0.0f, 100.0f);
-            break;
-        case SETTINGS_PID_KI:
+        }
+        else if (pid_selected_index == PID_KI)
+        {
             current_settings->pid_ki = CLAMP(current_settings->pid_ki + 0.01f, 0.0f, 10.0f);
-            break;
-        case SETTINGS_PID_KD:
+        }
+        else if (pid_selected_index == PID_KD)
+        {
             current_settings->pid_kd = CLAMP(current_settings->pid_kd + 0.1f, 0.0f, 100.0f);
-            break;
-        case SETTINGS_STAGE1_DEFAULT:
-            current_settings->stage1_default = CLAMP(current_settings->stage1_default + 1, 1, 300);
-            break;
-        case SETTINGS_STAGE2_DEFAULT:
-            current_settings->stage2_default = CLAMP(current_settings->stage2_default + 1, 1, 300);
-            break;
-        default:
-            break;
         }
         break;
 
     case UI_EVENT_ROTARY_CCW:
-        // Adjust value down based on selected setting
-        switch (settings_selected_item)
+        if (pid_selected_index == PID_KP)
         {
-        case SETTINGS_TARGET_TEMP:
-            current_settings->target_temp = CLAMP(current_settings->target_temp - 1.0f, 0.0f, 250.0f);
-            break;
-        case SETTINGS_PID_KP:
             current_settings->pid_kp = CLAMP(current_settings->pid_kp - 0.1f, 0.0f, 100.0f);
-            break;
-        case SETTINGS_PID_KI:
-            current_settings->pid_ki = CLAMP(current_settings->pid_ki - 0.01f, 0.0f, 10.0f);
-            break;
-        case SETTINGS_PID_KD:
-            current_settings->pid_kd = CLAMP(current_settings->pid_kd - 0.1f, 0.0f, 100.0f);
-            break;
-        case SETTINGS_STAGE1_DEFAULT:
-            current_settings->stage1_default = CLAMP(current_settings->stage1_default - 1, 1, 300);
-            break;
-        case SETTINGS_STAGE2_DEFAULT:
-            current_settings->stage2_default = CLAMP(current_settings->stage2_default - 1, 1, 300);
-            break;
-        default:
-            break;
         }
+        else if (pid_selected_index == PID_KI)
+        {
+            current_settings->pid_ki = CLAMP(current_settings->pid_ki - 0.01f, 0.0f, 10.0f);
+        }
+        else if (pid_selected_index == PID_KD)
+        {
+            current_settings->pid_kd = CLAMP(current_settings->pid_kd - 0.1f, 0.0f, 100.0f);
+        }
+        break;
+
+    case UI_EVENT_ROTARY_PUSH:
+        save_persistent_data();
+        ui_current_state = UI_STATE_PID_MENU;
+        ESP_LOGI(TAG, "PID confirmed and saved");
         break;
 
     default:
@@ -575,94 +828,101 @@ static void render_main_menu(void)
 
 static void render_job_setup(void)
 {
-    char buffer[32];
-
-    display_clear();
-    display_text(0, 0, "Job Setup");
-    display_text(0, 1, job_setup_items[job_setup_selected_index]);
-
-    if (job_setup_selected_index == JOB_ITEM_NUM_SHIRTS)
-    {
-        sprintf(buffer, "Value: %d", current_run->num_shirts);
-        display_text(0, 2, buffer);
-    }
-    else
-    {
-        display_text(0, 2, print_type_items[current_run->type]);
-    }
-    display_flush();
+    display_menu(job_setup_items, JOB_SETUP_ITEM_COUNT, job_setup_selected_index);
 }
 
-static void render_settings_menu(void)
-{
-    char buffer[32];
-
-    display_clear();
-    display_text(0, 0, "Settings");
-    display_text(0, 1, settings_menu_items[settings_selected_item]);
-
-    switch (settings_selected_item)
-    {
-    case SETTINGS_TARGET_TEMP:
-        sprintf(buffer, "%.1f C", current_settings->target_temp);
-        break;
-    case SETTINGS_AUTOTUNE_PID:  // NEW
-        sprintf(buffer, "Press to start");
-        break;
-    case SETTINGS_PID_KP:
-        sprintf(buffer, "%.2f", current_settings->pid_kp);
-        break;
-    case SETTINGS_PID_KI:
-        sprintf(buffer, "%.2f", current_settings->pid_ki);
-        break;
-    case SETTINGS_PID_KD:
-        sprintf(buffer, "%.2f", current_settings->pid_kd);
-        break;
-    case SETTINGS_STAGE1_DEFAULT:
-        sprintf(buffer, "%d s", current_settings->stage1_default);
-        break;
-    case SETTINGS_STAGE2_DEFAULT:
-        sprintf(buffer, "%d s", current_settings->stage2_default);
-        break;
-    default:
-        sprintf(buffer, "Unknown");
-        break;
-    }
-    display_text(0, 2, buffer);
-    display_flush();
-}
-
-static void render_settings_adjust(void)
+static void render_job_setup_adjust(void)
 {
     char buffer[32];
 
     display_clear();
     display_text(0, 0, "Adjust:");
-    display_text(0, 1, settings_menu_items[settings_selected_item]);
+    display_text(0, 1, job_setup_items[job_setup_selected_index]);
 
-    switch (settings_selected_item)
+    if (job_setup_selected_index == JOB_ITEM_NUM_SHIRTS)
     {
-    case SETTINGS_TARGET_TEMP:
-        sprintf(buffer, "> %.1f C <", current_settings->target_temp);
-        break;
-    case SETTINGS_PID_KP:
-        sprintf(buffer, "> %.2f <", current_settings->pid_kp);
-        break;
-    case SETTINGS_PID_KI:
-        sprintf(buffer, "> %.2f <", current_settings->pid_ki);
-        break;
-    case SETTINGS_PID_KD:
-        sprintf(buffer, "> %.2f <", current_settings->pid_kd);
-        break;
-    case SETTINGS_STAGE1_DEFAULT:
+        sprintf(buffer, "> %d <", current_run->num_shirts);
+        display_text(0, 2, buffer);
+    }
+    display_flush();
+}
+
+static void render_print_type_select(void)
+{
+    display_menu(print_type_items, 2, print_type_selected_index);
+}
+
+static void render_settings_menu(void)
+{
+    display_menu(settings_menu_items, SETTINGS_COUNT, settings_selected_item);
+}
+
+static void render_timers_menu(void)
+{
+    display_menu(timer_menu_items, TIMER_COUNT, timer_selected_index);
+}
+
+static void render_timer_adjust(void)
+{
+    char buffer[32];
+
+    display_clear();
+    display_text(0, 0, "Adjust:");
+    display_text(0, 1, timer_menu_items[timer_selected_index]);
+
+    if (timer_selected_index == TIMER_STAGE1)
+    {
         sprintf(buffer, "> %d s <", current_settings->stage1_default);
-        break;
-    case SETTINGS_STAGE2_DEFAULT:
+    }
+    else
+    {
         sprintf(buffer, "> %d s <", current_settings->stage2_default);
-        break;
-    default:
-        sprintf(buffer, "Unknown");
-        break;
+    }
+    display_text(0, 2, buffer);
+    display_flush();
+}
+
+static void render_temperature_menu(void)
+{
+    display_menu(temp_menu_items, TEMP_COUNT, temp_selected_index);
+}
+
+static void render_temp_adjust(void)
+{
+    char buffer[32];
+
+    display_clear();
+    display_text(0, 0, "Adjust:");
+    display_text(0, 1, "Target Temp");
+    sprintf(buffer, "> %.1f C <", current_settings->target_temp);
+    display_text(0, 2, buffer);
+    display_flush();
+}
+
+static void render_pid_menu(void)
+{
+    display_menu(pid_menu_items, PID_COUNT, pid_selected_index);
+}
+
+static void render_pid_adjust(void)
+{
+    char buffer[32];
+
+    display_clear();
+    display_text(0, 0, "Adjust:");
+    display_text(0, 1, pid_menu_items[pid_selected_index]);
+
+    if (pid_selected_index == PID_KP)
+    {
+        sprintf(buffer, "> %.2f <", current_settings->pid_kp);
+    }
+    else if (pid_selected_index == PID_KI)
+    {
+        sprintf(buffer, "> %.3f <", current_settings->pid_ki);
+    }
+    else if (pid_selected_index == PID_KD)
+    {
+        sprintf(buffer, "> %.2f <", current_settings->pid_kd);
     }
     display_text(0, 2, buffer);
     display_flush();
@@ -802,8 +1062,8 @@ static void handle_autotune_complete_state(ui_event_t event)
     {
     case UI_EVENT_ROTARY_PUSH:
     case UI_EVENT_BUTTON_BACK:
-        // Return to settings menu
-        ui_current_state = UI_STATE_SETTINGS_MENU;
+        // Return to PID menu
+        ui_current_state = UI_STATE_PID_MENU;
         break;
 
     default:
@@ -894,9 +1154,3 @@ static void render_cycle_complete(void)
     display_text(0, 3, "Close for next");
     display_flush();
 }
-
-// Dummy handlers for states that don't need event handling
-static void handle_stage1_done_state(ui_event_t event) { (void)event; }
-static void handle_stage2_ready_state(ui_event_t event) { (void)event; }
-static void handle_stage2_done_state(ui_event_t event) { (void)event; }
-static void handle_cycle_complete_state(ui_event_t event) { (void)event; }

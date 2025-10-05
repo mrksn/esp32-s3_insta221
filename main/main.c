@@ -556,16 +556,30 @@ void init_defaults(void)
 
 void load_persistent_data(void)
 {
-    if (storage_has_saved_data())
+    bool has_saved_data = storage_has_saved_data();
+    ESP_LOGI(TAG, "Checking for saved data: %s", has_saved_data ? "FOUND" : "NOT FOUND");
+
+    if (has_saved_data)
     {
-        if (storage_load_settings(&settings) != ESP_OK)
+        esp_err_t load_result = storage_load_settings(&settings);
+        ESP_LOGI(TAG, "Load settings result: %s", esp_err_to_name(load_result));
+
+        if (load_result != ESP_OK)
         {
             ESP_LOGW(TAG, "Failed to load settings, using defaults");
         }
         else if (!validate_settings(&settings))
         {
             ESP_LOGW(TAG, "Loaded settings failed validation, using defaults");
+            ESP_LOGW(TAG, "  target_temp=%.1f, stage1=%d, stage2=%d",
+                     settings.target_temp, settings.stage1_default, settings.stage2_default);
             init_defaults(); // Reset to defaults if validation fails
+        }
+        else
+        {
+            ESP_LOGI(TAG, "Loaded settings: target_temp=%.1f, stage1=%d, stage2=%d, Kp=%.2f, Ki=%.3f, Kd=%.2f",
+                     settings.target_temp, settings.stage1_default, settings.stage2_default,
+                     settings.pid_kp, settings.pid_ki, settings.pid_kd);
         }
 
         if (storage_load_print_run(&print_run) != ESP_OK)
@@ -591,6 +605,9 @@ void save_persistent_data(void)
     // Validate data before saving
     if (validate_settings(&settings))
     {
+        ESP_LOGI(TAG, "Saving settings: target_temp=%.1f, stage1=%d, stage2=%d, Kp=%.2f, Ki=%.3f, Kd=%.2f",
+                 settings.target_temp, settings.stage1_default, settings.stage2_default,
+                 settings.pid_kp, settings.pid_ki, settings.pid_kd);
         storage_save_settings(&settings);
     }
     else

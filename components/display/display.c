@@ -292,16 +292,27 @@ void display_menu(const char **items, uint8_t num_items, uint8_t selected)
 {
     memset(display_buffer, 0, sizeof(display_buffer));
 
-    for (uint8_t i = 0; i < num_items && i < 4; i++)
+    // Calculate scroll offset to keep selected item visible
+    // Display can show 4 items at once (8 pages / 2 pages per item)
+    uint8_t visible_items = 4;
+    uint8_t scroll_offset = 0;
+
+    if (selected >= visible_items) {
+        scroll_offset = selected - visible_items + 1;
+    }
+
+    // Display up to 4 items starting from scroll_offset
+    for (uint8_t i = 0; i < visible_items && (i + scroll_offset) < num_items; i++)
     {
+        uint8_t item_index = i + scroll_offset;
         char line[21];
-        if (i == selected)
+        if (item_index == selected)
         {
-            snprintf(line, sizeof(line), "> %s", items[i]);
+            snprintf(line, sizeof(line), "> %s", items[item_index]);
         }
         else
         {
-            snprintf(line, sizeof(line), "  %s", items[i]);
+            snprintf(line, sizeof(line), "  %s", items[item_index]);
         }
         draw_text_internal(0, i * 2, line);
     }
