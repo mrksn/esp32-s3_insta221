@@ -847,7 +847,7 @@ static void render_job_setup(void)
         }
         else // JOB_ITEM_PRINT_TYPE
         {
-            const char *type_str = (current_run->type == SINGLE_SIDED) ? "Sing" : "Doub";
+            const char *type_str = (current_run->type == SINGLE_SIDED) ? "SS" : "DS";
             if (i == job_setup_selected_index)
             {
                 snprintf(line, sizeof(line), "> %-11s %4s", job_setup_items[i], type_str);
