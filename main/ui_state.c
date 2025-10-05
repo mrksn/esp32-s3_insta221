@@ -32,20 +32,19 @@ static const char *TAG = "ui_state";
 // Current state
 static ui_state_t ui_current_state = UI_STATE_INIT;
 static ui_state_t ui_previous_state = UI_STATE_INIT;
-static menu_item_t menu_selected_item = MENU_JOB_SETUP;
+static menu_item_t menu_selected_item = MENU_PROFILES;
 static settings_item_t settings_selected_item = SETTINGS_TIMERS;
 static bool display_needs_update = true;
 
 // Menu items
 static const char *main_menu_items[] = {
-    "Job Setup",
-    "Start Pressing",
-    "Free Press",
-    "Heat Up",
     "Profiles",
-    "Settings",
+    "Job Setup",
+    "Heat Up",
+    "Job Press",
+    "Free Press",
     "Statistics",
-    "Reset Stats"
+    "Settings"
 };
 
 static const char *profile_items[] = {
@@ -65,7 +64,8 @@ static const char *stats_menu_items[] = {
 
 static const char *settings_menu_items[] = {
     "Timers",
-    "Temperature"
+    "Temperature",
+    "Reset Stats"
 };
 
 static const char *timer_menu_items[] = {
@@ -531,10 +531,22 @@ static void handle_main_menu_state(ui_event_t event)
         ESP_LOGI(TAG, "Encoder push pressed, entering menu item: %d", menu_selected_item);
         switch (menu_selected_item)
         {
+        case MENU_PROFILES:
+            ui_current_state = UI_STATE_PROFILES_MENU;
+            profile_selected_index = 0;
+            break;
         case MENU_JOB_SETUP:
             ESP_LOGI(TAG, "Entering JOB_SETUP state");
             ui_current_state = UI_STATE_JOB_SETUP;
             job_setup_selected_index = 0;
+            break;
+        case MENU_HEAT_UP:
+            ui_current_state = UI_STATE_HEAT_UP;
+            heat_up_start_time = esp_timer_get_time() / 1000000;
+            heat_up_start_temp = temperature_display_celsius;
+            heat_up_heating_enabled = heating_is_active();
+            display_needs_update = true; // Force immediate screen update
+            ESP_LOGI(TAG, "Heat up mode activated");
             break;
         case MENU_START_PRESSING:
             ui_current_state = UI_STATE_START_PRESSING;
@@ -550,27 +562,12 @@ static void handle_main_menu_state(ui_event_t event)
             free_press_run_start_time = 0;
             ESP_LOGI(TAG, "Free press mode activated, statistics reset");
             break;
-        case MENU_HEAT_UP:
-            ui_current_state = UI_STATE_HEAT_UP;
-            heat_up_start_time = esp_timer_get_time() / 1000000;
-            heat_up_start_temp = temperature_display_celsius;
-            heat_up_heating_enabled = heating_is_active();
-            display_needs_update = true; // Force immediate screen update
-            ESP_LOGI(TAG, "Heat up mode activated");
-            break;
-        case MENU_PROFILES:
-            ui_current_state = UI_STATE_PROFILES_MENU;
-            profile_selected_index = 0;
+        case MENU_STATISTICS:
+            ui_current_state = UI_STATE_STATISTICS;
             break;
         case MENU_SETTINGS:
             ui_current_state = UI_STATE_SETTINGS_MENU;
             settings_selected_item = 0;
-            break;
-        case MENU_STATISTICS:
-            ui_current_state = UI_STATE_STATISTICS;
-            break;
-        case MENU_RESET_STATS:
-            ui_current_state = UI_STATE_RESET_STATS;
             break;
         default:
             break;
@@ -786,6 +783,12 @@ static void handle_settings_menu_state(ui_event_t event)
             ui_current_state = UI_STATE_TEMPERATURE_MENU;
             temp_selected_index = 0;
             ESP_LOGI(TAG, "Entering Temperature menu");
+        }
+        else if (settings_selected_item == SETTINGS_RESET_STATS)
+        {
+            ui_current_state = UI_STATE_RESET_STATS;
+            reset_stats_selected_index = 0;
+            ESP_LOGI(TAG, "Entering Reset Stats menu");
         }
         break;
 
@@ -2153,12 +2156,12 @@ static void handle_reset_stats_state(ui_event_t event)
         break;
 
     case UI_EVENT_BUTTON_BACK:
-        // Cancel and return to main menu
+        // Cancel and return to settings menu
         reset_stats_button_pressed = false;
         reset_stats_press_start_time = 0;
         reset_stats_selected_index = 0;
-        ui_current_state = UI_STATE_MAIN_MENU;
-        ESP_LOGI(TAG, "Reset stats cancelled, returning to main menu");
+        ui_current_state = UI_STATE_SETTINGS_MENU;
+        ESP_LOGI(TAG, "Reset stats cancelled, returning to settings menu");
         break;
 
     default:
@@ -2250,7 +2253,7 @@ static void render_reset_stats(void)
 
             // Show message briefly then return
             vTaskDelay(pdMS_TO_TICKS(1500));
-            ui_current_state = UI_STATE_MAIN_MENU;
+            ui_current_state = UI_STATE_SETTINGS_MENU;
             return;
         }
         // Button still pressed, show appropriate message

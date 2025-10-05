@@ -44,14 +44,13 @@ typedef enum
 // Menu items
 typedef enum
 {
+    MENU_PROFILES,       // Material profiles
     MENU_JOB_SETUP,
-    MENU_START_PRESSING,
-    MENU_FREE_PRESS,     // NEW: Free press mode without job tracking
-    MENU_HEAT_UP,        // NEW: Heat up mode
-    MENU_PROFILES,       // NEW: Material profiles
-    MENU_SETTINGS,
+    MENU_HEAT_UP,        // Heat up mode
+    MENU_START_PRESSING, // Job press
+    MENU_FREE_PRESS,     // Free press mode without job tracking
     MENU_STATISTICS,
-    MENU_RESET_STATS,    // NEW: Reset statistics
+    MENU_SETTINGS,
     MENU_COUNT
 } menu_item_t;
 
@@ -60,6 +59,7 @@ typedef enum
 {
     SETTINGS_TIMERS,
     SETTINGS_TEMPERATURE,
+    SETTINGS_RESET_STATS,  // Reset statistics submenu
     SETTINGS_COUNT
 } settings_item_t;
 
