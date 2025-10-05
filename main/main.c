@@ -290,22 +290,9 @@ void ui_task(void *pvParameters)
         // Handle pause button AFTER UI update (so UI gets button events first)
         handle_pause_button();
 
-        // Handle timed state transitions
+        // Get current state
         uint32_t current_time = esp_timer_get_time() / 1000000;
         ui_state_t current_ui_state = ui_get_current_state();
-
-        if (current_ui_state == UI_STATE_STAGE1_DONE && (current_time - state_transition_time) >= 2)
-        {
-            // After 2 seconds of DONE, show READY
-            ui_set_state(UI_STATE_STAGE2_READY);
-            state_transition_time = current_time;
-            ESP_LOGI(TAG, "Transitioning to READY state");
-        }
-        else if (current_ui_state == UI_STATE_STAGE2_DONE && (current_time - state_transition_time) >= 2)
-        {
-            // After 2 seconds of DONE, complete the cycle (already done in temp task)
-            // Just wait for press open which will trigger cycle complete
-        }
 
         // Monitor press state changes for cycle control
         bool current_press_state = controls_is_press_closed();
@@ -329,12 +316,14 @@ void ui_task(void *pvParameters)
                 ui_set_state(UI_STATE_PRESSING_ACTIVE);
                 state_transition_time = current_time;
             }
-            // Check if we're in cycle complete state - start new cycle
-            else if (current_ui_state == UI_STATE_CYCLE_COMPLETE)
+            // Check if we're in cycle complete state - start new cycle immediately
+            else if (current_ui_state == UI_STATE_CYCLE_COMPLETE && validate_cycle_safety())
             {
-                ui_set_state(UI_STATE_START_PRESSING);
+                press_safety_locked = false; // Release safety lock for validated cycle
+                start_pressing_cycle();
+                ui_set_state(UI_STATE_PRESSING_ACTIVE);
                 state_transition_time = current_time;
-                ESP_LOGI(TAG, "Returning to start pressing state");
+                ESP_LOGI(TAG, "Starting next cycle from cycle complete");
             }
             // Press closed - validate conditions before starting new cycle
             else if (current_ui_state == UI_STATE_START_PRESSING && validate_cycle_safety())
@@ -357,7 +346,14 @@ void ui_task(void *pvParameters)
         else if (!current_press_state && last_press_state)
         {
             // Press opened
-            if (pressing_active)
+            if (current_ui_state == UI_STATE_STAGE1_DONE)
+            {
+                // Transition from DONE to READY when press opens
+                ui_set_state(UI_STATE_STAGE2_READY);
+                state_transition_time = current_time;
+                ESP_LOGI(TAG, "Press opened - transitioning to READY state");
+            }
+            else if (pressing_active)
             {
                 if (current_stage == STAGE2)
                 {
@@ -365,11 +361,6 @@ void ui_task(void *pvParameters)
                     complete_pressing_cycle();
                     press_safety_locked = true; // Re-engage safety lock
                     state_transition_time = current_time;
-                }
-                else if (current_ui_state == UI_STATE_STAGE1_DONE)
-                {
-                    // Already in DONE state, will auto-transition to READY after 2 seconds
-                    ESP_LOGI(TAG, "Press opened during Stage 1 DONE message");
                 }
             }
         }

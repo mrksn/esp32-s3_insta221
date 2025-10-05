@@ -428,7 +428,7 @@ void display_large_number(uint8_t x, uint8_t y, uint8_t number)
 void display_invert(bool inverted)
 {
     uint8_t cmd = inverted ? SH1106_CMD_INVERT_DISPLAY : SH1106_CMD_NORMAL_DISPLAY;
-    i2c_master_transmit(sh1106_dev_handle, &cmd, 1, -1);
+    i2c_write_cmd(cmd);
 }
 
 // Display large text (4x scaled)

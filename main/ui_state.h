@@ -82,4 +82,7 @@ void ui_adjust_value(int8_t delta);
 // Display update
 void ui_update_display(void);
 
+// External functions from main.c
+extern void save_persistent_data(void);
+
 #endif // UI_STATE_H

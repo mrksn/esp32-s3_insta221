@@ -452,8 +452,9 @@ static void handle_settings_adjust_state(ui_event_t event)
 
     case UI_EVENT_BUTTON_SAVE:
         // Save and exit adjustment mode
+        save_persistent_data();
         ui_current_state = UI_STATE_SETTINGS_MENU;
-        ESP_LOGI(TAG, "Settings saved");
+        ESP_LOGI(TAG, "Settings saved to persistent storage");
         break;
 
     case UI_EVENT_ROTARY_CW:
