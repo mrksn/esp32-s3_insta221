@@ -2437,14 +2437,19 @@ static void render_heat_up(void)
         return;
     }
 
-    // Only redraw if heating state changed or second changed (reduce flickering)
-    if (heating_active != heating_was_active || elapsed_sec != last_update_sec)
+    // Full redraw only when heating state changes or entering for first time
+    if (heating_active != heating_was_active || !screen_initialized)
     {
         display_clear();
-
-        // Heating is ON - show heat up progress
         display_text(0, 0, "Heating Up");
+        display_flush();
+        screen_initialized = true;
+        heating_was_active = true;
+    }
 
+    // Partial update when second changes (only redraw changing values)
+    if (elapsed_sec != last_update_sec)
+    {
         // Show current / target temp
         sprintf(buffer, "%.1f / %.1fC",
                 temperature_display_celsius,
@@ -2474,26 +2479,25 @@ static void render_heat_up(void)
 
                 if (temp_remaining > 1.0f)
                 {
-                    sprintf(buffer, "ETA: %lum %lus", eta_min, eta_sec_remainder);
+                    sprintf(buffer, "ETA: %lum %lus       ", eta_min, eta_sec_remainder);
                 }
                 else
                 {
-                    sprintf(buffer, "ETA: Ready!");
+                    sprintf(buffer, "ETA: Ready!         ");
                 }
                 display_text(0, 3, buffer);
             }
             else
             {
-                display_text(0, 3, "ETA: Calculating...");
+                display_text(0, 3, "ETA: Calculating... ");
             }
         }
         else
         {
-            display_text(0, 3, "ETA: Calculating...");
+            display_text(0, 3, "ETA: Calculating... ");
         }
 
         display_flush();
-        heating_was_active = true;
         last_update_sec = elapsed_sec;
     }
 }
