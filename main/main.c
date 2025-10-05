@@ -162,14 +162,22 @@ void app_main(void)
     // Initialize defaults first
     init_defaults();
 
-    // Load persistent data (may override defaults)
-    load_persistent_data();
-
     // Initialize components with comprehensive error handling
     esp_err_t err;
     bool init_success = true;
 
     ESP_LOGI(TAG, "Initializing system components...");
+
+    // Initialize storage FIRST before loading data
+    err = storage_init();
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to initialize persistent storage: %s", esp_err_to_name(err));
+        init_success = false;
+    }
+
+    // Load persistent data AFTER storage is initialized (may override defaults)
+    load_persistent_data();
 
     err = sensor_init();
     if (err != ESP_OK)
@@ -196,13 +204,6 @@ void app_main(void)
     if (err != ESP_OK)
     {
         ESP_LOGE(TAG, "Failed to initialize heating system: %s", esp_err_to_name(err));
-        init_success = false;
-    }
-
-    err = storage_init();
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to initialize persistent storage: %s", esp_err_to_name(err));
         init_success = false;
     }
 

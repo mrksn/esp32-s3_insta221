@@ -52,7 +52,7 @@ static const char *timer_menu_items[] = {
 };
 
 static const char *temp_menu_items[] = {
-    "Target Temp",
+    "Target C",
     "PID Control"
 };
 
@@ -64,8 +64,8 @@ static const char *pid_menu_items[] = {
 };
 
 static const char *job_setup_items[] = {
-    "Num Shirts",
-    "Print Type"
+    "Shirts #",
+    "Sides #"
 };
 
 static const char *print_type_items[] = {
@@ -87,12 +87,16 @@ static float temperature_display_celsius = 0.0f;
 
 // Job setup state
 static int job_setup_selected_index = 0;
+static bool job_setup_edit_mode = false;
 static int print_type_selected_index = 0;
 
 // Settings submenu state
 static int timer_selected_index = 0;
+static bool timer_edit_mode = false;
 static int temp_selected_index = 0;
+static bool temp_edit_mode = false;
 static int pid_selected_index = 0;
+static bool pid_edit_mode = false;
 
 // Press state tracking
 static bool was_press_closed_ui = false;
@@ -387,32 +391,80 @@ static void handle_job_setup_state(ui_event_t event)
     switch (event)
     {
     case UI_EVENT_BUTTON_BACK:
-        ui_current_state = UI_STATE_MAIN_MENU;
+        if (job_setup_edit_mode)
+        {
+            // Exit edit mode without saving
+            job_setup_edit_mode = false;
+            ESP_LOGI(TAG, "Job setup edit cancelled");
+        }
+        else
+        {
+            // Exit to main menu
+            ui_current_state = UI_STATE_MAIN_MENU;
+        }
         break;
 
     case UI_EVENT_ROTARY_CW:
-        job_setup_selected_index = MENU_WRAP(job_setup_selected_index + 1,
-                                              JOB_SETUP_ITEM_COUNT);
+        if (job_setup_edit_mode)
+        {
+            // Adjust value
+            if (job_setup_selected_index == JOB_ITEM_NUM_SHIRTS)
+            {
+                current_run->num_shirts = CLAMP(current_run->num_shirts + 1,
+                                                 NUM_SHIRTS_MIN,
+                                                 NUM_SHIRTS_MAX);
+            }
+            else if (job_setup_selected_index == JOB_ITEM_PRINT_TYPE)
+            {
+                current_run->type = (current_run->type == SINGLE_SIDED) ?
+                                    DOUBLE_SIDED : SINGLE_SIDED;
+            }
+        }
+        else
+        {
+            // Navigate menu
+            job_setup_selected_index = MENU_WRAP(job_setup_selected_index + 1,
+                                                  JOB_SETUP_ITEM_COUNT);
+        }
         break;
 
     case UI_EVENT_ROTARY_CCW:
-        job_setup_selected_index = MENU_WRAP(job_setup_selected_index - 1,
-                                              JOB_SETUP_ITEM_COUNT);
+        if (job_setup_edit_mode)
+        {
+            // Adjust value
+            if (job_setup_selected_index == JOB_ITEM_NUM_SHIRTS)
+            {
+                current_run->num_shirts = CLAMP(current_run->num_shirts - 1,
+                                                 NUM_SHIRTS_MIN,
+                                                 NUM_SHIRTS_MAX);
+            }
+            else if (job_setup_selected_index == JOB_ITEM_PRINT_TYPE)
+            {
+                current_run->type = (current_run->type == SINGLE_SIDED) ?
+                                    DOUBLE_SIDED : SINGLE_SIDED;
+            }
+        }
+        else
+        {
+            // Navigate menu
+            job_setup_selected_index = MENU_WRAP(job_setup_selected_index - 1,
+                                                  JOB_SETUP_ITEM_COUNT);
+        }
         break;
 
     case UI_EVENT_ROTARY_PUSH:
-        // Enter adjustment mode for selected item
-        if (job_setup_selected_index == JOB_ITEM_NUM_SHIRTS)
+        if (job_setup_edit_mode)
         {
-            ui_current_state = UI_STATE_JOB_SETUP_ADJUST;
-            ESP_LOGI(TAG, "Entering adjustment mode for Num Shirts");
+            // Save and exit edit mode
+            save_persistent_data();
+            job_setup_edit_mode = false;
+            ESP_LOGI(TAG, "Job setup value saved");
         }
-        else if (job_setup_selected_index == JOB_ITEM_PRINT_TYPE)
+        else
         {
-            // Enter print type selection menu
-            ui_current_state = UI_STATE_PRINT_TYPE_SELECT;
-            print_type_selected_index = current_run->type;  // Initialize with current value
-            ESP_LOGI(TAG, "Entering print type selection");
+            // Enter edit mode
+            job_setup_edit_mode = true;
+            ESP_LOGI(TAG, "Entering edit mode for: %s", job_setup_items[job_setup_selected_index]);
         }
         break;
 
@@ -453,8 +505,9 @@ static void handle_job_setup_adjust_state(ui_event_t event)
 
     case UI_EVENT_ROTARY_PUSH:
         // Exit adjustment mode and return to menu
+        save_persistent_data();
         ui_current_state = UI_STATE_JOB_SETUP;
-        ESP_LOGI(TAG, "Job setup value confirmed");
+        ESP_LOGI(TAG, "Job setup value confirmed and saved");
         break;
 
     default:
@@ -483,8 +536,9 @@ static void handle_print_type_select_state(ui_event_t event)
     case UI_EVENT_ROTARY_PUSH:
         // Save selection and return to job setup
         current_run->type = (printing_type_t)print_type_selected_index;
+        save_persistent_data();
         ui_current_state = UI_STATE_JOB_SETUP;
-        ESP_LOGI(TAG, "Print type set to: %d", current_run->type);
+        ESP_LOGI(TAG, "Print type set to: %d and saved", current_run->type);
         break;
 
     default:
@@ -533,20 +587,73 @@ static void handle_timers_menu_state(ui_event_t event)
     switch (event)
     {
     case UI_EVENT_BUTTON_BACK:
-        ui_current_state = UI_STATE_SETTINGS_MENU;
+        if (timer_edit_mode)
+        {
+            // Exit edit mode without saving
+            timer_edit_mode = false;
+            ESP_LOGI(TAG, "Timer edit cancelled");
+        }
+        else
+        {
+            // Exit to settings menu
+            ui_current_state = UI_STATE_SETTINGS_MENU;
+        }
         break;
 
     case UI_EVENT_ROTARY_CW:
-        timer_selected_index = MENU_WRAP(timer_selected_index + 1, TIMER_COUNT);
+        if (timer_edit_mode)
+        {
+            // Adjust value
+            if (timer_selected_index == TIMER_STAGE1)
+            {
+                current_settings->stage1_default = CLAMP(current_settings->stage1_default + 1, 1, 300);
+            }
+            else if (timer_selected_index == TIMER_STAGE2)
+            {
+                current_settings->stage2_default = CLAMP(current_settings->stage2_default + 1, 1, 300);
+            }
+        }
+        else
+        {
+            // Navigate menu
+            timer_selected_index = MENU_WRAP(timer_selected_index + 1, TIMER_COUNT);
+        }
         break;
 
     case UI_EVENT_ROTARY_CCW:
-        timer_selected_index = MENU_WRAP(timer_selected_index - 1, TIMER_COUNT);
+        if (timer_edit_mode)
+        {
+            // Adjust value
+            if (timer_selected_index == TIMER_STAGE1)
+            {
+                current_settings->stage1_default = CLAMP(current_settings->stage1_default - 1, 1, 300);
+            }
+            else if (timer_selected_index == TIMER_STAGE2)
+            {
+                current_settings->stage2_default = CLAMP(current_settings->stage2_default - 1, 1, 300);
+            }
+        }
+        else
+        {
+            // Navigate menu
+            timer_selected_index = MENU_WRAP(timer_selected_index - 1, TIMER_COUNT);
+        }
         break;
 
     case UI_EVENT_ROTARY_PUSH:
-        ui_current_state = UI_STATE_TIMER_ADJUST;
-        ESP_LOGI(TAG, "Entering timer adjustment for: %d", timer_selected_index);
+        if (timer_edit_mode)
+        {
+            // Save and exit edit mode
+            save_persistent_data();
+            timer_edit_mode = false;
+            ESP_LOGI(TAG, "Timer value saved");
+        }
+        else
+        {
+            // Enter edit mode
+            timer_edit_mode = true;
+            ESP_LOGI(TAG, "Entering edit mode for: %s", timer_menu_items[timer_selected_index]);
+        }
         break;
 
     default:
@@ -607,28 +714,75 @@ static void handle_temperature_menu_state(ui_event_t event)
     switch (event)
     {
     case UI_EVENT_BUTTON_BACK:
-        ui_current_state = UI_STATE_SETTINGS_MENU;
+        if (temp_edit_mode)
+        {
+            // Exit edit mode without saving
+            temp_edit_mode = false;
+            ESP_LOGI(TAG, "Temperature edit cancelled");
+        }
+        else
+        {
+            // Exit to settings menu
+            ui_current_state = UI_STATE_SETTINGS_MENU;
+        }
         break;
 
     case UI_EVENT_ROTARY_CW:
-        temp_selected_index = MENU_WRAP(temp_selected_index + 1, TEMP_COUNT);
+        if (temp_edit_mode)
+        {
+            // Adjust value (only Target Temp is editable here)
+            if (temp_selected_index == TEMP_TARGET_TEMP)
+            {
+                current_settings->target_temp = CLAMP(current_settings->target_temp + 1.0f, 0.0f, 250.0f);
+            }
+        }
+        else
+        {
+            // Navigate menu
+            temp_selected_index = MENU_WRAP(temp_selected_index + 1, TEMP_COUNT);
+        }
         break;
 
     case UI_EVENT_ROTARY_CCW:
-        temp_selected_index = MENU_WRAP(temp_selected_index - 1, TEMP_COUNT);
+        if (temp_edit_mode)
+        {
+            // Adjust value (only Target Temp is editable here)
+            if (temp_selected_index == TEMP_TARGET_TEMP)
+            {
+                current_settings->target_temp = CLAMP(current_settings->target_temp - 1.0f, 0.0f, 250.0f);
+            }
+        }
+        else
+        {
+            // Navigate menu
+            temp_selected_index = MENU_WRAP(temp_selected_index - 1, TEMP_COUNT);
+        }
         break;
 
     case UI_EVENT_ROTARY_PUSH:
-        if (temp_selected_index == TEMP_TARGET_TEMP)
+        if (temp_edit_mode)
         {
-            ui_current_state = UI_STATE_TEMP_ADJUST;
-            ESP_LOGI(TAG, "Entering target temp adjustment");
+            // Save and exit edit mode
+            save_persistent_data();
+            temp_edit_mode = false;
+            ESP_LOGI(TAG, "Temperature value saved");
         }
-        else if (temp_selected_index == TEMP_PID_CONTROL)
+        else
         {
-            ui_current_state = UI_STATE_PID_MENU;
-            pid_selected_index = 0;
-            ESP_LOGI(TAG, "Entering PID Control menu");
+            // Check what was selected
+            if (temp_selected_index == TEMP_TARGET_TEMP)
+            {
+                // Enter edit mode
+                temp_edit_mode = true;
+                ESP_LOGI(TAG, "Entering edit mode for Target Temp");
+            }
+            else if (temp_selected_index == TEMP_PID_CONTROL)
+            {
+                // Navigate to PID submenu
+                ui_current_state = UI_STATE_PID_MENU;
+                pid_selected_index = 0;
+                ESP_LOGI(TAG, "Entering PID Control menu");
+            }
         }
         break;
 
@@ -676,35 +830,97 @@ static void handle_pid_menu_state(ui_event_t event)
     switch (event)
     {
     case UI_EVENT_BUTTON_BACK:
-        ui_current_state = UI_STATE_TEMPERATURE_MENU;
+        if (pid_edit_mode)
+        {
+            // Exit edit mode without saving
+            pid_edit_mode = false;
+            ESP_LOGI(TAG, "PID edit cancelled");
+        }
+        else
+        {
+            // Exit to temperature menu
+            ui_current_state = UI_STATE_TEMPERATURE_MENU;
+        }
         break;
 
     case UI_EVENT_ROTARY_CW:
-        pid_selected_index = MENU_WRAP(pid_selected_index + 1, PID_COUNT);
-        break;
-
-    case UI_EVENT_ROTARY_CCW:
-        pid_selected_index = MENU_WRAP(pid_selected_index - 1, PID_COUNT);
-        break;
-
-    case UI_EVENT_ROTARY_PUSH:
-        if (pid_selected_index == PID_AUTOTUNE)
+        if (pid_edit_mode)
         {
-            // Start auto-tune at current target temperature
-            if (start_pid_autotune(current_settings->target_temp))
+            // Adjust value
+            if (pid_selected_index == PID_KP)
             {
-                ui_current_state = UI_STATE_AUTOTUNE;
-                ESP_LOGI(TAG, "Starting auto-tune from UI");
+                current_settings->pid_kp = CLAMP(current_settings->pid_kp + 0.1f, 0.0f, 100.0f);
             }
-            else
+            else if (pid_selected_index == PID_KI)
             {
-                ESP_LOGW(TAG, "Failed to start auto-tune from UI");
+                current_settings->pid_ki = CLAMP(current_settings->pid_ki + 0.01f, 0.0f, 10.0f);
+            }
+            else if (pid_selected_index == PID_KD)
+            {
+                current_settings->pid_kd = CLAMP(current_settings->pid_kd + 0.1f, 0.0f, 100.0f);
             }
         }
         else
         {
-            ui_current_state = UI_STATE_PID_ADJUST;
-            ESP_LOGI(TAG, "Entering PID adjustment for: %d", pid_selected_index);
+            // Navigate menu
+            pid_selected_index = MENU_WRAP(pid_selected_index + 1, PID_COUNT);
+        }
+        break;
+
+    case UI_EVENT_ROTARY_CCW:
+        if (pid_edit_mode)
+        {
+            // Adjust value
+            if (pid_selected_index == PID_KP)
+            {
+                current_settings->pid_kp = CLAMP(current_settings->pid_kp - 0.1f, 0.0f, 100.0f);
+            }
+            else if (pid_selected_index == PID_KI)
+            {
+                current_settings->pid_ki = CLAMP(current_settings->pid_ki - 0.01f, 0.0f, 10.0f);
+            }
+            else if (pid_selected_index == PID_KD)
+            {
+                current_settings->pid_kd = CLAMP(current_settings->pid_kd - 0.1f, 0.0f, 100.0f);
+            }
+        }
+        else
+        {
+            // Navigate menu
+            pid_selected_index = MENU_WRAP(pid_selected_index - 1, PID_COUNT);
+        }
+        break;
+
+    case UI_EVENT_ROTARY_PUSH:
+        if (pid_edit_mode)
+        {
+            // Save and exit edit mode
+            save_persistent_data();
+            pid_edit_mode = false;
+            ESP_LOGI(TAG, "PID value saved");
+        }
+        else
+        {
+            // Check what was selected
+            if (pid_selected_index == PID_AUTOTUNE)
+            {
+                // Start auto-tune at current target temperature
+                if (start_pid_autotune(current_settings->target_temp))
+                {
+                    ui_current_state = UI_STATE_AUTOTUNE;
+                    ESP_LOGI(TAG, "Starting auto-tune from UI");
+                }
+                else
+                {
+                    ESP_LOGW(TAG, "Failed to start auto-tune from UI");
+                }
+            }
+            else
+            {
+                // Enter edit mode
+                pid_edit_mode = true;
+                ESP_LOGI(TAG, "Entering edit mode for: %s", pid_menu_items[pid_selected_index]);
+            }
         }
         break;
 
@@ -834,27 +1050,38 @@ static void render_job_setup(void)
 
     for (uint8_t i = 0; i < JOB_SETUP_ITEM_COUNT; i++)
     {
+        bool is_selected = (i == job_setup_selected_index);
+        bool is_editing = is_selected && job_setup_edit_mode;
+
         if (i == JOB_ITEM_NUM_SHIRTS)
         {
-            if (i == job_setup_selected_index)
+            if (is_editing)
             {
-                snprintf(line, sizeof(line), "> %-11s %4d", job_setup_items[i], current_run->num_shirts);
+                snprintf(line, sizeof(line), "> %-9s  [%3d]", job_setup_items[i], current_run->num_shirts);
+            }
+            else if (is_selected)
+            {
+                snprintf(line, sizeof(line), "> %-9s   %3d ", job_setup_items[i], current_run->num_shirts);
             }
             else
             {
-                snprintf(line, sizeof(line), "  %-11s %4d", job_setup_items[i], current_run->num_shirts);
+                snprintf(line, sizeof(line), "  %-9s   %3d ", job_setup_items[i], current_run->num_shirts);
             }
         }
         else // JOB_ITEM_PRINT_TYPE
         {
             const char *type_str = (current_run->type == SINGLE_SIDED) ? "SS" : "DS";
-            if (i == job_setup_selected_index)
+            if (is_editing)
             {
-                snprintf(line, sizeof(line), "> %-11s %4s", job_setup_items[i], type_str);
+                snprintf(line, sizeof(line), "> %-9s  [%3s]", job_setup_items[i], type_str);
+            }
+            else if (is_selected)
+            {
+                snprintf(line, sizeof(line), "> %-9s   %3s ", job_setup_items[i], type_str);
             }
             else
             {
-                snprintf(line, sizeof(line), "  %-11s %4s", job_setup_items[i], type_str);
+                snprintf(line, sizeof(line), "  %-9s   %3s ", job_setup_items[i], type_str);
             }
         }
         display_text(0, i * 2, line);
@@ -898,14 +1125,20 @@ static void render_timers_menu(void)
     for (uint8_t i = 0; i < TIMER_COUNT; i++)
     {
         int value = (i == TIMER_STAGE1) ? current_settings->stage1_default : current_settings->stage2_default;
+        bool is_selected = (i == timer_selected_index);
+        bool is_editing = is_selected && timer_edit_mode;
 
-        if (i == timer_selected_index)
+        if (is_editing)
         {
-            snprintf(line, sizeof(line), "> %-10s %4ds", timer_menu_items[i], value);
+            snprintf(line, sizeof(line), "> %-8s  [%3ds]", timer_menu_items[i], value);
+        }
+        else if (is_selected)
+        {
+            snprintf(line, sizeof(line), "> %-8s   %3ds ", timer_menu_items[i], value);
         }
         else
         {
-            snprintf(line, sizeof(line), "  %-10s %4ds", timer_menu_items[i], value);
+            snprintf(line, sizeof(line), "  %-8s   %3ds ", timer_menu_items[i], value);
         }
         display_text(0, i * 2, line);
     }
@@ -941,20 +1174,28 @@ static void render_temperature_menu(void)
 
     for (uint8_t i = 0; i < TEMP_COUNT; i++)
     {
+        bool is_selected = (i == temp_selected_index);
+        bool is_editing = is_selected && temp_edit_mode;
+
         if (i == TEMP_TARGET_TEMP)
         {
-            if (i == temp_selected_index)
+            int temp_int = (int)current_settings->target_temp;
+            if (is_editing)
             {
-                snprintf(line, sizeof(line), "> %-9s %5.1fC", temp_menu_items[i], current_settings->target_temp);
+                snprintf(line, sizeof(line), "> %-9s  [%3d]", temp_menu_items[i], temp_int);
+            }
+            else if (is_selected)
+            {
+                snprintf(line, sizeof(line), "> %-9s   %3d ", temp_menu_items[i], temp_int);
             }
             else
             {
-                snprintf(line, sizeof(line), "  %-9s %5.1fC", temp_menu_items[i], current_settings->target_temp);
+                snprintf(line, sizeof(line), "  %-9s   %3d ", temp_menu_items[i], temp_int);
             }
         }
         else // TEMP_PID_CONTROL
         {
-            if (i == temp_selected_index)
+            if (is_selected)
             {
                 snprintf(line, sizeof(line), "> %s", temp_menu_items[i]);
             }
@@ -989,10 +1230,13 @@ static void render_pid_menu(void)
 
     for (uint8_t i = 0; i < PID_COUNT; i++)
     {
+        bool is_selected = (i == pid_selected_index);
+        bool is_editing = is_selected && pid_edit_mode;
+
         if (i == PID_AUTOTUNE)
         {
-            // Auto-Tune doesn't have a value to display
-            if (i == pid_selected_index)
+            // Auto-Tune doesn't have a value to display or edit
+            if (is_selected)
             {
                 snprintf(line, sizeof(line), "> %s", pid_menu_items[i]);
             }
@@ -1003,35 +1247,47 @@ static void render_pid_menu(void)
         }
         else if (i == PID_KP)
         {
-            if (i == pid_selected_index)
+            if (is_editing)
             {
-                snprintf(line, sizeof(line), "> %-10s %5.2f", pid_menu_items[i], current_settings->pid_kp);
+                snprintf(line, sizeof(line), "> %-3s  [%5.2f]", pid_menu_items[i], current_settings->pid_kp);
+            }
+            else if (is_selected)
+            {
+                snprintf(line, sizeof(line), "> %-3s   %5.2f ", pid_menu_items[i], current_settings->pid_kp);
             }
             else
             {
-                snprintf(line, sizeof(line), "  %-10s %5.2f", pid_menu_items[i], current_settings->pid_kp);
+                snprintf(line, sizeof(line), "  %-3s   %5.2f ", pid_menu_items[i], current_settings->pid_kp);
             }
         }
         else if (i == PID_KI)
         {
-            if (i == pid_selected_index)
+            if (is_editing)
             {
-                snprintf(line, sizeof(line), "> %-10s %5.3f", pid_menu_items[i], current_settings->pid_ki);
+                snprintf(line, sizeof(line), "> %-3s  [%5.3f]", pid_menu_items[i], current_settings->pid_ki);
+            }
+            else if (is_selected)
+            {
+                snprintf(line, sizeof(line), "> %-3s   %5.3f ", pid_menu_items[i], current_settings->pid_ki);
             }
             else
             {
-                snprintf(line, sizeof(line), "  %-10s %5.3f", pid_menu_items[i], current_settings->pid_ki);
+                snprintf(line, sizeof(line), "  %-3s   %5.3f ", pid_menu_items[i], current_settings->pid_ki);
             }
         }
         else // PID_KD
         {
-            if (i == pid_selected_index)
+            if (is_editing)
             {
-                snprintf(line, sizeof(line), "> %-10s %5.2f", pid_menu_items[i], current_settings->pid_kd);
+                snprintf(line, sizeof(line), "> %-3s  [%5.2f]", pid_menu_items[i], current_settings->pid_kd);
+            }
+            else if (is_selected)
+            {
+                snprintf(line, sizeof(line), "> %-3s   %5.2f ", pid_menu_items[i], current_settings->pid_kd);
             }
             else
             {
-                snprintf(line, sizeof(line), "  %-10s %5.2f", pid_menu_items[i], current_settings->pid_kd);
+                snprintf(line, sizeof(line), "  %-3s   %5.2f ", pid_menu_items[i], current_settings->pid_kd);
             }
         }
         display_text(0, i * 2, line);
