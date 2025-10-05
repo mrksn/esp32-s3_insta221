@@ -302,10 +302,26 @@ void ui_update(float current_temp)
         display_needs_update = true;
     }
 
-    // Always update display during reset stats to show countdown
+    // Check for button release during reset stats (even if not updating display)
     if (ui_current_state == UI_STATE_RESET_STATS && reset_stats_button_pressed)
     {
-        display_needs_update = true;
+        // Calculate elapsed time
+        uint32_t current_time = esp_timer_get_time() / 1000; // milliseconds
+        uint32_t elapsed_ms = current_time - reset_stats_press_start_time;
+
+        // Check if button was released early
+        if (!controls_is_rotary_button_pressed() && elapsed_ms < 4000)
+        {
+            ESP_LOGI(TAG, "Button released too early (%lu ms)", elapsed_ms);
+            reset_stats_button_pressed = false;
+            reset_stats_press_start_time = 0;
+            display_needs_update = true; // Return to menu
+        }
+        // Force display updates during countdown period (after 1 second)
+        else if (elapsed_ms >= 1000)
+        {
+            display_needs_update = true;
+        }
     }
 
     // Only update display when needed
@@ -2049,8 +2065,8 @@ static void render_reset_stats(void)
 
         ESP_LOGI(TAG, "Render reset stats: pressed=%d, elapsed=%lu ms", button_still_pressed, elapsed_ms);
 
-        // Check if we've reached the trigger time (4 seconds)
-        if (elapsed_ms >= 4000 && button_still_pressed)
+        // Check if we've reached the trigger time (4 seconds) and button still pressed
+        if (elapsed_ms >= 4000 && button_still_pressed && reset_stats_button_pressed)
         {
             display_clear();
 
@@ -2059,10 +2075,26 @@ static void render_reset_stats(void)
             {
                 // Reset job and free press statistics only
                 ESP_LOGI(TAG, "Resetting job and free press statistics");
+
+                // Reset free press stats
                 free_press_count = 0;
                 free_press_time_elapsed = 0;
                 free_press_avg_time = 0;
                 free_press_run_start_time = 0;
+
+                // Reset current print run/job stats
+                if (current_run != NULL)
+                {
+                    current_run->progress = 0;
+                    current_run->time_elapsed = 0;
+                    current_run->shirts_completed = 0;
+                    current_run->avg_time_per_shirt = 0;
+                    ESP_LOGI(TAG, "Print run reset: progress=%d, completed=%d",
+                             current_run->progress, current_run->shirts_completed);
+                }
+
+                // Save to persistent storage
+                save_persistent_data();
 
                 display_text(0, 1, "Job Stats Reset!");
                 display_flush();
@@ -2080,6 +2112,18 @@ static void render_reset_stats(void)
                 free_press_avg_time = 0;
                 free_press_run_start_time = 0;
 
+                // Reset current print run as well
+                if (current_run != NULL)
+                {
+                    current_run->progress = 0;
+                    current_run->time_elapsed = 0;
+                    current_run->shirts_completed = 0;
+                    current_run->avg_time_per_shirt = 0;
+                }
+
+                // Save to persistent storage
+                save_persistent_data();
+
                 display_text(0, 1, "All Stats Wiped!");
                 display_flush();
             }
@@ -2093,36 +2137,36 @@ static void render_reset_stats(void)
             ui_current_state = UI_STATE_MAIN_MENU;
             return;
         }
-        // Button was released before time elapsed
-        else if (!button_still_pressed)
-        {
-            // Released too early
-            ESP_LOGI(TAG, "Button released too early (%lu ms)", elapsed_ms);
-            reset_stats_button_pressed = false;
-            reset_stats_press_start_time = 0;
-        }
         // Button still pressed, show appropriate message
+        // (Button release is now handled in ui_update to avoid flicker)
         else
         {
-            // Track last displayed second to minimize redraws
+            // Track display state to minimize redraws
             static uint32_t last_countdown_sec = 999;
+            static bool wait_message_shown = false;
 
             if (elapsed_ms < 1000)
             {
-                // Still in the 1-second wait period
-                display_clear();
-                const char* option_text = (reset_stats_selected_index == 0) ? "Job Stats" : "ALL STATS";
-                sprintf(buffer, "Wiping %s", option_text);
-                display_text(0, 0, buffer);
-                display_text(0, 1, "");
-                display_text(0, 2, "Hold to confirm...");
-                display_text(0, 3, "");
-                display_flush();
-                last_countdown_sec = 999; // Reset for next countdown
+                // Still in the 1-second wait period - only show message once
+                if (!wait_message_shown)
+                {
+                    display_clear();
+                    const char* option_text = (reset_stats_selected_index == 0) ? "Job Stats" : "ALL STATS";
+                    sprintf(buffer, "Wiping %s", option_text);
+                    display_text(0, 0, buffer);
+                    display_text(0, 1, "");
+                    display_text(0, 2, "Hold to confirm...");
+                    display_text(0, 3, "");
+                    display_flush();
+                    wait_message_shown = true;
+                    last_countdown_sec = 999; // Reset for next countdown
+                }
+                // Don't update display again until countdown starts
             }
             else
             {
                 // In countdown period (1000ms to 4000ms)
+                wait_message_shown = false; // Reset for next time
                 uint32_t countdown_ms = 4000 - elapsed_ms; // Remaining time in ms
                 uint32_t countdown_sec = (countdown_ms + 999) / 1000; // Round up to show 3, 2, 1
 
