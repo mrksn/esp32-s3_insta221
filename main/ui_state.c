@@ -1440,11 +1440,11 @@ static void render_startup(void)
 {
     display_clear();
 
-    // Display "DINfabrik" in normal text, centered
+    // Display "DINfabrik" in normal text, centered on line 1
     display_text(0, 1, "    DINfabrik");
 
-    // Display "initialising system" below (line 3)
-    display_text(0, 3, "initialising...");
+    // Display "initialising..." at bottom (line 7 - last line for 64px display)
+    display_text(0, 7, "  initialising...");
 
     display_flush();
 }
