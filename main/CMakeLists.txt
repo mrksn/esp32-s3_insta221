@@ -9,7 +9,6 @@ idf_component_register(
         "pid/pid_autotune.c"
     INCLUDE_DIRS
         "."
-        "../include"
         "utils"
         "pid"
     REQUIRES

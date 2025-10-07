@@ -35,5 +35,7 @@ void display_set_pixel(uint8_t x, uint8_t y, bool on);
 void display_draw_rect(uint8_t x, uint8_t y, uint8_t width, uint8_t height, bool filled);
 void display_draw_progress_bar(uint8_t x, uint8_t y, uint8_t width, uint8_t height, uint8_t progress);
 void display_large_number(uint8_t x, uint8_t y, uint8_t number);
+void display_large_text(uint8_t x, uint8_t y, const char *text);
+void display_invert(bool inverted);
 
 #endif // DISPLAY_CONTRACT_H

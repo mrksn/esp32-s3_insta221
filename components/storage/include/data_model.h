@@ -51,6 +51,22 @@ typedef struct {
     uint16_t stage2_default; // seconds
 } settings_t;
 
+typedef struct {
+    uint32_t total_presses;
+    uint32_t total_operating_time;
+    uint32_t total_idle_time;
+    uint32_t total_warmup_time;
+    uint16_t warmup_count;
+    float avg_warmup_time;
+    uint16_t presses_since_pid_tune;
+    uint16_t presses_in_tolerance;
+    uint16_t aborted_cycles;
+    uint16_t temp_faults;
+    uint16_t sensor_failures;
+    uint16_t emergency_stops;
+    uint32_t session_start_time;
+} statistics_t;
+
 // Validation functions
 bool validate_print_run(const print_run_t *run);
 bool validate_pressing_cycle(const pressing_cycle_t *cycle);

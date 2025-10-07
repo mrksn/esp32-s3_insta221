@@ -17,10 +17,10 @@
 #include "esp_timer.h"
 #include <esp_err.h>
 #include "ui_state.h"
-#include "controls_contract.h"
-#include "display_contract.h"
-#include "heating_contract.h"
-#include "data_model.h"
+#include "controls_contract.h"    // components/controls/include/
+#include "display_contract.h"     // components/display/include/
+#include "heating_contract.h"     // components/heating/include/
+#include "data_model.h"           // components/storage/include/
 #include "system_config.h"
 
 static const char *TAG = "ui_state";

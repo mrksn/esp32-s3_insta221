@@ -26,15 +26,15 @@
 #include "esp_timer.h"
 #include "esp_log.h"
 
-// Component contracts
-#include "sensor_contract.h"
-#include "display_contract.h"
-#include "controls_contract.h"
-#include "heating_contract.h"
-#include "storage_contract.h"
+// Component contracts (from component include directories)
+#include "sensor_contract.h"      // components/sensors/include/
+#include "display_contract.h"     // components/display/include/
+#include "controls_contract.h"    // components/controls/include/
+#include "heating_contract.h"     // components/heating/include/
+#include "storage_contract.h"     // components/storage/include/
+#include "data_model.h"           // components/storage/include/
 
 // Internal modules
-#include "data_model.h"
 #include "ui_state.h"
 #include "main.h"
 #include "pid_autotune.h"  // NEW: Auto-tune support
@@ -577,9 +577,8 @@ void temp_control_task(void *pvParameters)
             ESP_LOGW(TAG, "Temperature sensor read failed (attempt %d/%d)",
                      sensor_error_count, SENSOR_RETRY_COUNT);
 
-            // TEMPORARILY DISABLED: Emergency shutdown after maximum retry attempts
-            // TODO: Re-enable after display testing
-            if (false && sensor_error_count >= SENSOR_RETRY_COUNT)
+            // Emergency shutdown after maximum retry attempts
+            if (sensor_error_count >= SENSOR_RETRY_COUNT)
             {
                 emergency_shutdown_system("Temperature sensor failure - too many consecutive errors");
             }

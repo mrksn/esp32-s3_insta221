@@ -39,4 +39,11 @@ bool controls_is_press_closed(void);
 // Check heating enable switch (physical switch)
 bool controls_is_heating_switch_on(void);
 
+// Check if rotary button is currently pressed (for hold detection)
+bool controls_is_rotary_button_pressed(void);
+
+// LED control functions
+void controls_set_led_green(bool on);
+void controls_set_led_blue(bool on);
+
 #endif // CONTROLS_CONTRACT_H

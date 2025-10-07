@@ -15,6 +15,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "data_model.h"  // components/storage/include/ - For settings_t, print_run_t, etc.
 
 // =============================================================================
 // Global State Variables (Exposed for Testing)

@@ -15,7 +15,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "heating_contract.h"  // For pid_config_t
+#include "heating_contract.h"  // components/heating/include/ - For pid_config_t
 
 // =============================================================================
 // Type Definitions
