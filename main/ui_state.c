@@ -2169,160 +2169,162 @@ static void handle_reset_stats_state(ui_event_t event)
     }
 }
 
-static void render_reset_stats(void)
+// Helper: Reset free press statistics
+static void reset_free_press_stats(void)
 {
+    free_press_count = 0;
+    free_press_time_elapsed = 0;
+    free_press_avg_time = 0;
+    free_press_run_start_time = 0;
+}
+
+// Helper: Reset current print run statistics
+static void reset_print_run_stats(void)
+{
+    if (current_run != NULL)
+    {
+        current_run->progress = 0;
+        current_run->time_elapsed = 0;
+        current_run->shirts_completed = 0;
+        current_run->avg_time_per_shirt = 0;
+    }
+}
+
+// Helper: Perform job statistics reset
+static void perform_job_stats_reset(void)
+{
+    ESP_LOGI(TAG, "Resetting job and free press statistics");
+
+    reset_free_press_stats();
+    reset_print_run_stats();
+    save_persistent_data();
+
+    display_clear();
+    display_text(0, 1, "Job Stats Reset!");
+    display_flush();
+}
+
+// Helper: Perform all statistics reset
+static void perform_all_stats_reset(void)
+{
+    ESP_LOGI(TAG, "Wiping all statistics");
+
+    memset(&statistics, 0, sizeof(statistics_t));
+    statistics.session_start_time = esp_timer_get_time() / 1000000;
+
+    reset_free_press_stats();
+    reset_print_run_stats();
+    save_persistent_data();
+
+    display_clear();
+    display_text(0, 1, "All Stats Wiped!");
+    display_flush();
+}
+
+// Helper: Render countdown confirmation screen
+static void render_reset_countdown(uint32_t elapsed_ms)
+{
+    static uint32_t last_countdown_sec = 999;
+    static bool wait_message_shown = false;
     char buffer[64];
 
-    if (reset_stats_button_pressed)
+    if (elapsed_ms < 1000)
     {
-        // Check if button is still pressed
-        bool button_still_pressed = controls_is_rotary_button_pressed();
-
-        // Calculate elapsed time in milliseconds
-        uint32_t current_time = esp_timer_get_time() / 1000; // milliseconds
-        uint32_t elapsed_ms = current_time - reset_stats_press_start_time;
-
-        ESP_LOGI(TAG, "Render reset stats: pressed=%d, elapsed=%lu ms", button_still_pressed, elapsed_ms);
-
-        // Check if we've reached the trigger time (4 seconds) and button still pressed
-        if (elapsed_ms >= 4000 && button_still_pressed && reset_stats_button_pressed)
+        // Still in the 1-second wait period - only show message once
+        if (!wait_message_shown)
         {
             display_clear();
-
-            // Perform the reset based on selected option
-            if (reset_stats_selected_index == 0)
-            {
-                // Reset job and free press statistics only
-                ESP_LOGI(TAG, "Resetting job and free press statistics");
-
-                // Reset free press stats
-                free_press_count = 0;
-                free_press_time_elapsed = 0;
-                free_press_avg_time = 0;
-                free_press_run_start_time = 0;
-
-                // Reset current print run/job stats
-                if (current_run != NULL)
-                {
-                    current_run->progress = 0;
-                    current_run->time_elapsed = 0;
-                    current_run->shirts_completed = 0;
-                    current_run->avg_time_per_shirt = 0;
-                    ESP_LOGI(TAG, "Print run reset: progress=%d, completed=%d",
-                             current_run->progress, current_run->shirts_completed);
-                }
-
-                // Save to persistent storage
-                save_persistent_data();
-
-                display_text(0, 1, "Job Stats Reset!");
-                display_flush();
-            }
-            else
-            {
-                // Wipe all statistics
-                ESP_LOGI(TAG, "Wiping all statistics");
-                memset(&statistics, 0, sizeof(statistics_t));
-                statistics.session_start_time = esp_timer_get_time() / 1000000;
-
-                // Also reset free press stats
-                free_press_count = 0;
-                free_press_time_elapsed = 0;
-                free_press_avg_time = 0;
-                free_press_run_start_time = 0;
-
-                // Reset current print run as well
-                if (current_run != NULL)
-                {
-                    current_run->progress = 0;
-                    current_run->time_elapsed = 0;
-                    current_run->shirts_completed = 0;
-                    current_run->avg_time_per_shirt = 0;
-                }
-
-                // Save to persistent storage
-                save_persistent_data();
-
-                display_text(0, 1, "All Stats Wiped!");
-                display_flush();
-            }
-
-            reset_stats_button_pressed = false;
-            reset_stats_press_start_time = 0;
-            reset_stats_selected_index = 0;
-
-            // Show message briefly then return
-            vTaskDelay(pdMS_TO_TICKS(1500));
-            ui_current_state = UI_STATE_SETTINGS_MENU;
-            return;
-        }
-        // Button still pressed, show appropriate message
-        // (Button release is now handled in ui_update to avoid flicker)
-        else
-        {
-            // Track display state to minimize redraws
-            static uint32_t last_countdown_sec = 999;
-            static bool wait_message_shown = false;
-
-            if (elapsed_ms < 1000)
-            {
-                // Still in the 1-second wait period - only show message once
-                if (!wait_message_shown)
-                {
-                    display_clear();
-                    const char* option_text = (reset_stats_selected_index == 0) ? "Job Stats" : "ALL STATS";
-                    sprintf(buffer, "Wiping %s", option_text);
-                    display_text(0, 0, buffer);
-                    display_text(0, 1, "");
-                    display_text(0, 2, "Hold to confirm...");
-                    display_text(0, 3, "");
-                    display_flush();
-                    wait_message_shown = true;
-                    last_countdown_sec = 999; // Reset for next countdown
-                }
-                // Don't update display again until countdown starts
-            }
-            else
-            {
-                // In countdown period (1000ms to 4000ms)
-                wait_message_shown = false; // Reset for next time
-                uint32_t countdown_ms = 4000 - elapsed_ms; // Remaining time in ms
-                uint32_t countdown_sec = (countdown_ms + 999) / 1000; // Round up to show 3, 2, 1
-
-                // Only redraw if the second changed
-                if (countdown_sec != last_countdown_sec)
-                {
-                    display_clear();
-                    // Use large text for countdown
-                    display_text(0, 0, "Wiping in:");
-                    sprintf(buffer, "%lu", countdown_sec);
-                    display_large_text(52, 20, buffer); // Center the number
-                    display_flush();
-                    last_countdown_sec = countdown_sec;
-                }
-            }
+            const char* option_text = (reset_stats_selected_index == 0) ? "Job Stats" : "ALL STATS";
+            sprintf(buffer, "Wiping %s", option_text);
+            display_text(0, 0, buffer);
+            display_text(0, 1, "");
+            display_text(0, 2, "Hold to confirm...");
+            display_text(0, 3, "");
+            display_flush();
+            wait_message_shown = true;
+            last_countdown_sec = 999; // Reset for next countdown
         }
     }
     else
     {
-        // Show menu with two options
-        display_clear();
-        display_text(0, 0, "Reset Statistics");
+        // In countdown period (1000ms to 4000ms)
+        wait_message_shown = false; // Reset for next time
+        uint32_t countdown_ms = 4000 - elapsed_ms;
+        uint32_t countdown_sec = (countdown_ms + 999) / 1000; // Round up
 
-        // Option 1: Wipe Job Stats
-        if (reset_stats_selected_index == 0)
+        // Only redraw if the second changed
+        if (countdown_sec != last_countdown_sec)
         {
-            display_text(0, 1, "> Wipe Job Stats");
-            display_text(0, 2, "  Wipe All Stats");
+            display_clear();
+            display_text(0, 0, "Wiping in:");
+            sprintf(buffer, "%lu", countdown_sec);
+            display_large_text(52, 20, buffer);
+            display_flush();
+            last_countdown_sec = countdown_sec;
         }
-        else
+    }
+}
+
+// Helper: Render reset stats menu
+static void render_reset_stats_menu(void)
+{
+    display_clear();
+    display_text(0, 0, "Reset Statistics");
+
+    if (reset_stats_selected_index == 0)
+    {
+        display_text(0, 1, "> Wipe Job Stats");
+        display_text(0, 2, "  Wipe All Stats");
+    }
+    else
+    {
+        display_text(0, 1, "  Wipe Job Stats");
+        display_text(0, 2, "> Wipe All Stats");
+    }
+
+    display_text(0, 3, "Hold to wipe");
+    display_flush();
+}
+
+static void render_reset_stats(void)
+{
+    if (reset_stats_button_pressed)
+    {
+        bool button_still_pressed = controls_is_rotary_button_pressed();
+        uint32_t current_time = esp_timer_get_time() / 1000;
+        uint32_t elapsed_ms = current_time - reset_stats_press_start_time;
+
+        ESP_LOGI(TAG, "Render reset stats: pressed=%d, elapsed=%lu ms", button_still_pressed, elapsed_ms);
+
+        // Check if we've reached the trigger time (4 seconds)
+        if (elapsed_ms >= 4000 && button_still_pressed && reset_stats_button_pressed)
         {
-            display_text(0, 1, "  Wipe Job Stats");
-            display_text(0, 2, "> Wipe All Stats");
+            // Perform the reset
+            if (reset_stats_selected_index == 0)
+            {
+                perform_job_stats_reset();
+            }
+            else
+            {
+                perform_all_stats_reset();
+            }
+
+            // Cleanup and return to settings
+            reset_stats_button_pressed = false;
+            reset_stats_press_start_time = 0;
+            reset_stats_selected_index = 0;
+            vTaskDelay(pdMS_TO_TICKS(1500));
+            ui_current_state = UI_STATE_SETTINGS_MENU;
+            return;
         }
 
-        display_text(0, 3, "Hold to wipe");
-        display_flush();
+        // Button still pressed - show countdown
+        render_reset_countdown(elapsed_ms);
+    }
+    else
+    {
+        // Show menu
+        render_reset_stats_menu();
     }
 }
 
