@@ -98,26 +98,10 @@ void reset_error_state(void);
 bool validate_cycle_safety(void);
 
 // =============================================================================
-// Safety Limits (Exposed for Testing)
+// System Constants
 // =============================================================================
-
-extern const float MAX_TEMPERATURE;
-extern const uint32_t MAX_CYCLE_TIME;
-extern const uint8_t SENSOR_RETRY_COUNT;
-extern const uint32_t SENSOR_RETRY_DELAY_MS;
-extern const float TEMP_HYSTERESIS;
-extern const uint32_t HEAP_MINIMUM;
-
-// Timing constants
-extern const uint32_t UI_TASK_TIMEOUT_SEC;
-extern const uint32_t TEMP_TASK_TIMEOUT_SEC;
-extern const uint32_t SENSOR_TIMEOUT_SEC;
-extern const uint32_t SENSOR_VALIDATION_TIMEOUT_SEC;
-
-// Temperature validation constants
-extern const float TEMP_PRESSING_MAX_OFFSET;
-extern const float TEMP_CYCLE_START_MAX_OFFSET;
-extern const float TEMP_CYCLE_START_MIN;
-extern const float TEMP_RECOVERY_OFFSET;
+// All system constants have been moved to system_constants.h
+// Include that header to access safety limits, timing constants, and
+// temperature validation parameters.
 
 #endif // MAIN_H

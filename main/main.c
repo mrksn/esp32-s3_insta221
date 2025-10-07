@@ -37,35 +37,8 @@
 // Internal modules
 #include "ui_state.h"
 #include "main.h"
-#include "pid_autotune.h"  // NEW: Auto-tune support
-
-// Task definitions
-#define UI_TASK_STACK_SIZE 4096
-#define TEMP_CONTROL_TASK_STACK_SIZE 4096
-#define WATCHDOG_TASK_STACK_SIZE 2048
-#define UI_TASK_PRIORITY 5
-#define TEMP_CONTROL_TASK_PRIORITY 4
-#define WATCHDOG_TASK_PRIORITY 3
-
-// Safety limits - Critical safety parameters
-const float MAX_TEMPERATURE = 220.0f;       ///< Maximum safe temperature (°C) - heating disabled above this
-const uint32_t MAX_CYCLE_TIME = 300;        ///< Maximum cycle time (seconds) - 5 minutes safety limit
-const uint8_t SENSOR_RETRY_COUNT = 3;       ///< Number of sensor read retry attempts
-const uint32_t SENSOR_RETRY_DELAY_MS = 500; ///< Delay between sensor retry attempts (ms)
-const float TEMP_HYSTERESIS = 5.0f;         ///< Temperature hysteresis for PID control (°C)
-const uint32_t HEAP_MINIMUM = 8192;         ///< Minimum free heap memory (bytes) - 8KB
-
-// Timing constants
-const uint32_t UI_TASK_TIMEOUT_SEC = 1;           ///< UI task watchdog timeout (seconds)
-const uint32_t TEMP_TASK_TIMEOUT_SEC = 3;         ///< Temperature task watchdog timeout (seconds)
-const uint32_t SENSOR_TIMEOUT_SEC = 30;           ///< Maximum time without sensor reading (seconds)
-const uint32_t SENSOR_VALIDATION_TIMEOUT_SEC = 10; ///< Sensor validation timeout for cycle start (seconds)
-
-// Temperature validation constants
-const float TEMP_PRESSING_MAX_OFFSET = 20.0f;   ///< Maximum temperature offset during pressing (°C)
-const float TEMP_CYCLE_START_MAX_OFFSET = 30.0f; ///< Maximum temperature offset for cycle start (°C)
-const float TEMP_CYCLE_START_MIN = 20.0f;       ///< Minimum temperature for cycle start (°C)
-const float TEMP_RECOVERY_OFFSET = 10.0f;       ///< Temperature offset for error recovery (°C)
+#include "pid_autotune.h"     // NEW: Auto-tune support
+#include "system_constants.h" // System-wide constants and configuration
 
 static const char *TAG = "main";
 
@@ -96,7 +69,7 @@ bool target_temp_reached = false;    ///< Whether target temperature has been re
 bool emergency_shutdown = false;      ///< Emergency shutdown flag
 uint8_t sensor_error_count = 0;       ///< Count of consecutive sensor read failures
 uint32_t last_temp_reading = 0;       ///< Timestamp of last successful temperature reading
-float last_valid_temperature = 25.0f; ///< Last valid temperature reading (°C)
+float last_valid_temperature = DEFAULT_TEMPERATURE; ///< Last valid temperature reading (°C)
 bool press_safety_locked = true;      ///< Safety interlock for press operations
 
 // Task management
