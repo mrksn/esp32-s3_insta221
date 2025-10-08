@@ -35,6 +35,7 @@ const system_config_t SYSTEM_CONFIG = {
         .cycle_start_max_offset_celsius = 30.0f,
         .cycle_start_min_celsius = 20.0f,
         .recovery_offset_celsius = 10.0f,
+        .calibration_offset_celsius = 0.0f,
     },
     .sensor = {
         .retry_count = 3,

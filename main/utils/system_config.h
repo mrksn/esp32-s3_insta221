@@ -53,6 +53,7 @@ typedef struct
         float cycle_start_max_offset_celsius; ///< Max temp offset for cycle start (°C)
         float cycle_start_min_celsius;        ///< Minimum temperature for cycle start (°C)
         float recovery_offset_celsius;        ///< Temperature offset for error recovery (°C)
+        float calibration_offset_celsius;     ///< Temperature offset for thermocouple calibration (°C)
     } temperature;
 
     // Sensor retry configuration

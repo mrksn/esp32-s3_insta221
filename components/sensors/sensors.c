@@ -225,8 +225,8 @@ bool sensor_read_temperature(float *temperature)
         // Update simulation model
         sensor_sim_update_temperature();
 
-        // Return simulated temperature
-        *temperature = sim_current_temp;
+        // Return simulated temperature with calibration offset applied
+        *temperature = sim_current_temp + SYSTEM_CONFIG.temperature.calibration_offset_celsius;
         ESP_LOGI(TAG, "Simulation temperature: %.2f°C (power: %.1f%%)",
                  *temperature, sim_heating_power);
         return true;
@@ -272,8 +272,8 @@ bool sensor_read_temperature(float *temperature)
         temp_raw |= 0xC000; // Sign extend
     }
 
-    // Convert to Celsius (0.25°C per LSB)
-    *temperature = temp_raw * 0.25f;
+    // Convert to Celsius (0.25°C per LSB) and apply calibration offset
+    *temperature = (temp_raw * 0.25f) + SYSTEM_CONFIG.temperature.calibration_offset_celsius;
 
     ESP_LOGD(TAG, "Temperature read: %.2f°C (raw: 0x%04X)", *temperature, temp_raw);
     return true;
