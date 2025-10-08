@@ -8,9 +8,11 @@ idf_component_register(
         "pid/pid_controller.c"
         "pid/pid_autotune.c"
     INCLUDE_DIRS
-        "."
-        "utils"
-        "pid"
+        "include"      # Public API headers
+    PRIV_INCLUDE_DIRS
+        "."            # Private implementation headers
+        "utils"        # Private utility headers
+        "pid"          # Private PID implementation headers
     REQUIRES
         display
         sensors
