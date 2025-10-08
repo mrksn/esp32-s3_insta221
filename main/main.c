@@ -68,6 +68,7 @@ bool target_temp_reached = false;    ///< Whether target temperature has been re
 
 // Heat press ready state tracking
 bool target_temp_reached_once = false; ///< Whether target temp has been reached at least once since boot
+static float profile_target_temp_when_reached = 0.0f; ///< Target temp of profile when target was reached
 
 // Error state and safety management
 bool emergency_shutdown = false;      ///< Emergency shutdown flag
@@ -1232,10 +1233,26 @@ void update_led_indicators(void)
 
     // Set target_temp_reached_once flag when temperature reaches target for the first time
     // This flag persists throughout the session (doesn't reset if temperature drops)
-    if (temp_ready && !target_temp_reached_once)
+    // Reset if profile target temperature has changed since last time
+    if (temp_ready)
     {
-        target_temp_reached_once = true;
-        ESP_LOGI(TAG, "Heat press ready state: target temperature reached for first time since boot");
+        // Check if profile target temperature has changed
+        if (target_temp_reached_once && settings.target_temp != profile_target_temp_when_reached)
+        {
+            target_temp_reached_once = false;
+            profile_target_temp_when_reached = 0.0f;
+            ESP_LOGI(TAG, "Profile target temp changed (%.1f -> %.1f) - resetting heat press ready state",
+                     profile_target_temp_when_reached, settings.target_temp);
+        }
+
+        // Set flag when reaching target for the first time (or after profile change)
+        if (!target_temp_reached_once)
+        {
+            target_temp_reached_once = true;
+            profile_target_temp_when_reached = settings.target_temp;
+            ESP_LOGI(TAG, "Heat press ready state: target temperature %.1f°C reached for first time",
+                     settings.target_temp);
+        }
     }
 
     // Blue LED: System is in pause mode

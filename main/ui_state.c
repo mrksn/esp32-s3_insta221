@@ -173,10 +173,23 @@ static float heat_up_start_temp = 0.0f;           ///< Temperature when heat up 
 static bool heat_up_heating_enabled = false;      ///< Whether heating was enabled when entering heat up mode
 static ui_state_t heat_up_return_state = UI_STATE_MAIN_MENU; ///< State to return to after heat-up completes
 
+// Heat up render state (moved from render function for better control)
+static bool heat_up_heating_was_active = false;   ///< Tracks heating switch state changes
+static uint32_t heat_up_last_update_sec = 0;      ///< Last elapsed second when display updated
+static bool heat_up_screen_initialized = false;   ///< Whether screen has been initialized
+
 // External functions from main.c
 extern bool start_pid_autotune(float target_temp);
 extern bool is_pid_autotuning(void);
 extern uint8_t get_autotune_progress(void);
+
+// =============================================================================
+// Helper Function Prototypes
+// =============================================================================
+
+static void init_free_press_mode(void);
+static void init_job_press_mode(void);
+static void enter_heat_up_mode(ui_state_t return_to);
 
 // =============================================================================
 // State Handler Function Prototypes
@@ -545,59 +558,36 @@ static void handle_main_menu_state(ui_event_t event)
             break;
         case MENU_HEAT_UP:
             // Always show heat-up screen when Heat Up is explicitly selected
-            ui_current_state = UI_STATE_HEAT_UP;
-            heat_up_start_time = esp_timer_get_time() / 1000000;
-            heat_up_start_temp = temperature_display_celsius;
-            heat_up_heating_enabled = heating_is_active();
-            heat_up_return_state = UI_STATE_HEAT_UP; // Stay in heat up mode
-            display_needs_update = true;
-            ESP_LOGI(TAG, "Heat up mode activated (manual selection)");
+            enter_heat_up_mode(UI_STATE_HEAT_UP);
             break;
+
         case MENU_START_PRESSING:
             // Check if target temp has been reached at least once
             if (!has_reached_target_temp_once())
             {
-                // Not ready - show heat-up screen and remember to return to job press
-                ui_current_state = UI_STATE_HEAT_UP;
-                heat_up_start_time = esp_timer_get_time() / 1000000;
-                heat_up_start_temp = temperature_display_celsius;
-                heat_up_heating_enabled = heating_is_active();
-                heat_up_return_state = UI_STATE_START_PRESSING; // Return to job press when ready
-                display_needs_update = true;
-                ESP_LOGI(TAG, "Target temp not reached yet - showing heat-up screen, will return to job press");
+                // Not ready - show heat-up screen first
+                enter_heat_up_mode(UI_STATE_START_PRESSING);
             }
             else
             {
-                // Target reached at least once - go directly to job press
+                // Target reached - go directly to job press
                 ui_current_state = UI_STATE_START_PRESSING;
-                free_press_mode = false;  // Job-tracked mode
-                ESP_LOGI(TAG, "Target temp reached - entering job press mode");
+                init_job_press_mode();
             }
             break;
+
         case MENU_FREE_PRESS:
             // Check if target temp has been reached at least once
             if (!has_reached_target_temp_once())
             {
-                // Not ready - show heat-up screen and remember to return to free press
-                ui_current_state = UI_STATE_HEAT_UP;
-                heat_up_start_time = esp_timer_get_time() / 1000000;
-                heat_up_start_temp = temperature_display_celsius;
-                heat_up_heating_enabled = heating_is_active();
-                heat_up_return_state = UI_STATE_FREE_PRESS; // Return to free press when ready
-                display_needs_update = true;
-                ESP_LOGI(TAG, "Target temp not reached yet - showing heat-up screen, will return to free press");
+                // Not ready - show heat-up screen first
+                enter_heat_up_mode(UI_STATE_FREE_PRESS);
             }
             else
             {
-                // Target reached at least once - go directly to free press
+                // Target reached - go directly to free press
                 ui_current_state = UI_STATE_FREE_PRESS;
-                free_press_mode = true;   // Free press mode
-                // Reset free press statistics for new session
-                free_press_count = 0;
-                free_press_time_elapsed = 0;
-                free_press_avg_time = 0;
-                free_press_run_start_time = 0;
-                ESP_LOGI(TAG, "Target temp reached - entering free press mode, statistics reset");
+                init_free_press_mode();
             }
             break;
         case MENU_STATISTICS:
@@ -1506,6 +1496,54 @@ static void handle_stats_kpis_state(ui_event_t event)
 // =============================================================================
 // Helper Functions
 // =============================================================================
+
+/**
+ * @brief Initialize free press mode and reset statistics
+ *
+ * Sets free_press_mode flag and resets all free press session statistics.
+ */
+static void init_free_press_mode(void)
+{
+    free_press_mode = true;
+    free_press_count = 0;
+    free_press_time_elapsed = 0;
+    free_press_avg_time = 0;
+    free_press_run_start_time = 0;
+    ESP_LOGI(TAG, "Free press mode initialized, statistics reset");
+}
+
+/**
+ * @brief Initialize job press mode
+ *
+ * Clears free_press_mode flag to enable job-tracked pressing.
+ */
+static void init_job_press_mode(void)
+{
+    free_press_mode = false;
+    ESP_LOGI(TAG, "Job press mode initialized");
+}
+
+/**
+ * @brief Enter heat-up state with specified return destination
+ *
+ * @param return_to State to transition to when heat-up completes
+ */
+static void enter_heat_up_mode(ui_state_t return_to)
+{
+    ui_current_state = UI_STATE_HEAT_UP;
+    heat_up_start_time = esp_timer_get_time() / 1000000;
+    heat_up_start_temp = temperature_display_celsius;
+    heat_up_heating_enabled = heating_is_active();
+    heat_up_return_state = return_to;
+
+    // Reset render state for clean display
+    heat_up_heating_was_active = false;
+    heat_up_last_update_sec = 0;
+    heat_up_screen_initialized = false;
+
+    display_needs_update = true;
+    ESP_LOGI(TAG, "Entering heat-up mode, will return to state: %d", return_to);
+}
 
 // =============================================================================
 // Display Rendering Implementations
@@ -2456,19 +2494,14 @@ static void handle_heat_up_state(ui_event_t event)
             {
                 ESP_LOGI(TAG, "Heat press ready - transitioning to Job Press");
                 ui_current_state = UI_STATE_START_PRESSING;
-                free_press_mode = false;  // Job-tracked mode
+                init_job_press_mode();
                 display_needs_update = true;
             }
             else if (heat_up_return_state == UI_STATE_FREE_PRESS)
             {
                 ESP_LOGI(TAG, "Heat press ready - transitioning to Free Press");
                 ui_current_state = UI_STATE_FREE_PRESS;
-                free_press_mode = true;   // Free press mode
-                // Reset free press statistics for new session
-                free_press_count = 0;
-                free_press_time_elapsed = 0;
-                free_press_avg_time = 0;
-                free_press_run_start_time = 0;
+                init_free_press_mode();
                 display_needs_update = true;
             }
             else if (heat_up_return_state == UI_STATE_HEAT_UP)
@@ -2484,22 +2517,6 @@ static void handle_heat_up_state(ui_event_t event)
 static void render_heat_up(void)
 {
     char buffer[32];
-    static bool heating_was_active = false;
-    static uint32_t last_update_sec = 0;
-    static bool screen_initialized = false;
-    static uint32_t last_heat_up_start_time = 0;
-
-    // Reset static variables when we detect a NEW heat-up session
-    // (different start time means we left and came back)
-    if (heat_up_start_time != last_heat_up_start_time)
-    {
-        heating_was_active = false;
-        last_update_sec = 0;
-        screen_initialized = false;
-        last_heat_up_start_time = heat_up_start_time;
-        ESP_LOGI(TAG, "Heat-up screen: new session detected, resetting static variables");
-    }
-
     bool heating_active = heating_is_active();
     uint32_t current_time = esp_timer_get_time() / 1000000;
     uint32_t elapsed_sec = current_time - heat_up_start_time;
@@ -2508,7 +2525,7 @@ static void render_heat_up(void)
     if (!heating_active)
     {
         // Only redraw if heating state changed to avoid flicker
-        if (heating_was_active || !screen_initialized)
+        if (heat_up_heating_was_active || !heat_up_screen_initialized)
         {
             display_clear();
             display_text(0, 0, "Heating Disabled!");
@@ -2516,25 +2533,25 @@ static void render_heat_up(void)
             display_text(0, 2, "Please connect");
             display_text(0, 3, "heating switch");
             display_flush();
-            heating_was_active = false;
-            screen_initialized = true;
+            heat_up_heating_was_active = false;
+            heat_up_screen_initialized = true;
         }
         return;
     }
 
     // Full redraw only when heating state changes or entering for first time
-    if (heating_active != heating_was_active || !screen_initialized)
+    if (heating_active != heat_up_heating_was_active || !heat_up_screen_initialized)
     {
         display_clear();
         display_text(0, 0, "Heating Up...");
         display_flush();
-        screen_initialized = true;
-        heating_was_active = true;
-        last_update_sec = 0; // Reset to force immediate update
+        heat_up_screen_initialized = true;
+        heat_up_heating_was_active = true;
+        heat_up_last_update_sec = 0; // Reset to force immediate update
     }
 
     // Partial update when second changes (only redraw changing values)
-    if (elapsed_sec != last_update_sec)
+    if (elapsed_sec != heat_up_last_update_sec)
     {
         // Show current / target temp
         sprintf(buffer, "%.1f / %.1fC",
@@ -2584,6 +2601,6 @@ static void render_heat_up(void)
         }
 
         display_flush();
-        last_update_sec = elapsed_sec;
+        heat_up_last_update_sec = elapsed_sec;
     }
 }
