@@ -71,6 +71,13 @@ bool sensor_is_simulation_mode(void)
  */
 void sensor_sim_set_heating_power(float power_percent)
 {
+    // Validation: Only allow setting heating power in simulation mode
+    if (!SYSTEM_CONFIG.simulation.enabled)
+    {
+        ESP_LOGW(TAG, "sensor_sim_set_heating_power called but simulation mode is disabled");
+        return;
+    }
+
     sim_heating_power = CLAMP(power_percent, 0.0f, 100.0f);
     ESP_LOGI(TAG, "Simulation: Heating power set to %.1f%%", sim_heating_power);
 }
@@ -213,9 +220,9 @@ esp_err_t sensor_init(void)
  */
 bool sensor_read_temperature(float *temperature)
 {
-    if (!temperature)
+    if (temperature == NULL)
     {
-        ESP_LOGE(TAG, "Invalid temperature pointer");
+        ESP_LOGE(TAG, "sensor_read_temperature: NULL temperature pointer");
         return false;
     }
 
@@ -227,12 +234,26 @@ bool sensor_read_temperature(float *temperature)
 
         // Return simulated temperature with calibration offset applied
         *temperature = sim_current_temp + SYSTEM_CONFIG.temperature.calibration_offset_celsius;
+
+        // Validate simulated temperature is within reasonable bounds
+        if (*temperature < -50.0f || *temperature > 500.0f)
+        {
+            ESP_LOGW(TAG, "Simulation temperature %.2f°C out of reasonable range, clamping", *temperature);
+            *temperature = CLAMP(*temperature, -50.0f, 500.0f);
+        }
+
         ESP_LOGI(TAG, "Simulation temperature: %.2f°C (power: %.1f%%)",
                  *temperature, sim_heating_power);
         return true;
     }
 
     // Real hardware mode - read from MAX31855
+    // Validation: Ensure SPI handle is initialized
+    if (spi_handle == NULL)
+    {
+        ESP_LOGE(TAG, "sensor_read_temperature: SPI handle not initialized");
+        return false;
+    }
     // Prepare SPI transaction for 32-bit read
     spi_transaction_t trans = {
         .length = 32,                  // 32 bits total

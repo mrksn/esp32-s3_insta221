@@ -306,6 +306,19 @@ static const state_handler_entry_t state_handlers[] = {
 
 void ui_init(settings_t *settings, print_run_t *print_run)
 {
+    // Validation: Check for NULL pointers
+    if (settings == NULL)
+    {
+        ESP_LOGE(TAG, "ui_init: NULL settings pointer");
+        return;
+    }
+
+    if (print_run == NULL)
+    {
+        ESP_LOGE(TAG, "ui_init: NULL print_run pointer");
+        return;
+    }
+
     current_settings = settings;
     current_run = print_run;
     ui_current_state = UI_STATE_STARTUP; // Start with startup screen
@@ -425,6 +438,13 @@ ui_event_t ui_get_event(void)
 
 void ui_process_event(ui_event_t event)
 {
+    // Validation: Ensure current_settings and current_run are valid before processing
+    if (current_settings == NULL || current_run == NULL)
+    {
+        ESP_LOGE(TAG, "ui_process_event: NULL settings or run pointer, cannot process events");
+        return;
+    }
+
     // Find and execute handler for current state
     for (size_t i = 0; i < ARRAY_SIZE(state_handlers); i++)
     {
@@ -1572,6 +1592,16 @@ static void render_main_menu(void)
 
 static void render_job_setup(void)
 {
+    // Validation: Check for NULL pointer
+    if (current_run == NULL)
+    {
+        ESP_LOGE(TAG, "render_job_setup: NULL current_run pointer");
+        display_clear();
+        display_text(0, 0, "Error: No run data");
+        display_flush();
+        return;
+    }
+
     char line[21];
 
     display_clear();
@@ -1580,6 +1610,13 @@ static void render_job_setup(void)
     {
         bool is_selected = (i == job_setup_selected_index);
         bool is_editing = is_selected && job_setup_edit_mode;
+
+        // Bounds check for menu array access
+        if (i >= sizeof(job_setup_items) / sizeof(job_setup_items[0]))
+        {
+            ESP_LOGW(TAG, "render_job_setup: i=%d out of bounds", i);
+            break;
+        }
 
         if (i == JOB_ITEM_NUM_SHIRTS)
         {
@@ -1707,6 +1744,16 @@ static void render_timer_adjust(void)
 
 static void render_temperature_menu(void)
 {
+    // Validation: Check for NULL pointer
+    if (current_settings == NULL)
+    {
+        ESP_LOGE(TAG, "render_temperature_menu: NULL current_settings pointer");
+        display_clear();
+        display_text(0, 0, "Error: No settings");
+        display_flush();
+        return;
+    }
+
     char line[21];
 
     display_clear();
@@ -1715,6 +1762,13 @@ static void render_temperature_menu(void)
     {
         bool is_selected = (i == temp_selected_index);
         bool is_editing = is_selected && temp_edit_mode;
+
+        // Bounds check for menu array access
+        if (i >= sizeof(temp_menu_items) / sizeof(temp_menu_items[0]))
+        {
+            ESP_LOGW(TAG, "render_temperature_menu: i=%d out of bounds", i);
+            break;
+        }
 
         if (i == TEMP_TARGET_TEMP)
         {

@@ -133,12 +133,27 @@ static const uint8_t font5x8[][5] = {
 
 static esp_err_t i2c_write_cmd(uint8_t cmd)
 {
+    if (sh1106_dev_handle == NULL)
+    {
+        ESP_LOGE(TAG, "i2c_write_cmd: Device handle is NULL");
+        return ESP_ERR_INVALID_STATE;
+    }
     uint8_t data[2] = {0x00, cmd}; // Control byte 0x00 for command
     return i2c_master_transmit(sh1106_dev_handle, data, 2, pdMS_TO_TICKS(100));
 }
 
 static esp_err_t i2c_write_data(uint8_t *data, size_t len)
 {
+    if (sh1106_dev_handle == NULL)
+    {
+        ESP_LOGE(TAG, "i2c_write_data: Device handle is NULL");
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (data == NULL || len == 0)
+    {
+        ESP_LOGE(TAG, "i2c_write_data: Invalid data pointer or length");
+        return ESP_ERR_INVALID_ARG;
+    }
     uint8_t buffer[len + 1];
     buffer[0] = 0x40; // Control byte 0x40 for data
     memcpy(&buffer[1], data, len);
@@ -150,18 +165,46 @@ static esp_err_t display_update(void)
     // Send the entire display buffer to the OLED
     for (uint8_t page = 0; page < (SH1106_HEIGHT / 8); page++)
     {
+        // Calculate buffer offset and validate bounds
+        uint16_t offset = page * SH1106_WIDTH;
+        if (offset >= sizeof(display_buffer))
+        {
+            ESP_LOGE(TAG, "display_update: Buffer overflow at page %d", page);
+            return ESP_ERR_INVALID_SIZE;
+        }
+
         // Set page address
-        i2c_write_cmd(SH1106_CMD_SET_PAGE_ADDR | page);
+        esp_err_t ret = i2c_write_cmd(SH1106_CMD_SET_PAGE_ADDR | page);
+        if (ret != ESP_OK)
+        {
+            ESP_LOGE(TAG, "display_update: Failed to set page address");
+            return ret;
+        }
 
         // Set column address (low byte)
-        i2c_write_cmd(SH1106_CMD_SET_COLUMN_ADDR_LOW | 2); // Offset for SH1106
+        ret = i2c_write_cmd(SH1106_CMD_SET_COLUMN_ADDR_LOW | 2); // Offset for SH1106
+        if (ret != ESP_OK)
+        {
+            ESP_LOGE(TAG, "display_update: Failed to set column address low");
+            return ret;
+        }
 
         // Set column address (high byte)
-        i2c_write_cmd(SH1106_CMD_SET_COLUMN_ADDR_HIGH | 0);
+        ret = i2c_write_cmd(SH1106_CMD_SET_COLUMN_ADDR_HIGH | 0);
+        if (ret != ESP_OK)
+        {
+            ESP_LOGE(TAG, "display_update: Failed to set column address high");
+            return ret;
+        }
 
         // Send page data (128 bytes per page)
-        uint8_t *page_data = &display_buffer[page * SH1106_WIDTH];
-        i2c_write_data(page_data, SH1106_WIDTH);
+        uint8_t *page_data = &display_buffer[offset];
+        ret = i2c_write_data(page_data, SH1106_WIDTH);
+        if (ret != ESP_OK)
+        {
+            ESP_LOGE(TAG, "display_update: Failed to write page data");
+            return ret;
+        }
     }
     return ESP_OK;
 }
@@ -246,32 +289,67 @@ void display_clear(void)
 
 static void draw_text_internal(uint8_t x, uint8_t y, const char *text)
 {
-    if (!text || y >= (SH1106_HEIGHT / 8))
+    if (text == NULL)
+    {
+        ESP_LOGW(TAG, "draw_text_internal: NULL text pointer");
         return;
+    }
+
+    if (y >= (SH1106_HEIGHT / 8))
+    {
+        ESP_LOGW(TAG, "draw_text_internal: y=%d out of bounds", y);
+        return;
+    }
 
     size_t len = strlen(text);
     uint8_t col = x;
+
+    // Bounds check for starting position
+    if (x >= SH1106_WIDTH)
+    {
+        ESP_LOGW(TAG, "draw_text_internal: x=%d out of bounds", x);
+        return;
+    }
 
     for (size_t i = 0; i < len && col < SH1106_WIDTH; i++)
     {
         char c = text[i];
         if (c >= 32 && c <= 126)
         {
+            // Bounds check for font array access
+            int font_index = c - 32;
+            if (font_index < 0 || font_index >= 96)
+            {
+                ESP_LOGW(TAG, "draw_text_internal: Invalid font index %d for char '%c'", font_index, c);
+                continue;
+            }
+
             // Get font data for this character
-            const uint8_t *font_char = font5x8[c - 32];
+            const uint8_t *font_char = font5x8[font_index];
 
             // Draw 5 columns of the character
             for (int j = 0; j < 5 && col < SH1106_WIDTH; j++)
             {
-                display_buffer[y * SH1106_WIDTH + col] = font_char[j];
+                // Bounds check for buffer access
+                uint16_t buffer_index = y * SH1106_WIDTH + col;
+                if (buffer_index >= sizeof(display_buffer))
+                {
+                    ESP_LOGW(TAG, "draw_text_internal: Buffer overflow at index %d", buffer_index);
+                    return;
+                }
+                display_buffer[buffer_index] = font_char[j];
                 col++;
             }
 
             // Add 1 pixel spacing between characters
             if (col < SH1106_WIDTH)
             {
-                display_buffer[y * SH1106_WIDTH + col] = 0x00;
-                col++;
+                uint16_t buffer_index = y * SH1106_WIDTH + col;
+                if (buffer_index < sizeof(display_buffer))
+                {
+                    display_buffer[buffer_index] = 0x00;
+                    col++;
+                }
             }
         }
     }
@@ -290,6 +368,25 @@ void display_flush(void)
 
 void display_menu(const char **items, uint8_t num_items, uint8_t selected)
 {
+    if (items == NULL)
+    {
+        ESP_LOGE(TAG, "display_menu: NULL items pointer");
+        return;
+    }
+
+    if (num_items == 0)
+    {
+        ESP_LOGW(TAG, "display_menu: num_items is zero");
+        return;
+    }
+
+    // Validate selected index
+    if (selected >= num_items)
+    {
+        ESP_LOGW(TAG, "display_menu: selected=%d >= num_items=%d, clamping", selected, num_items);
+        selected = num_items - 1;
+    }
+
     memset(display_buffer, 0, sizeof(display_buffer));
 
     // Calculate scroll offset to keep selected item visible
@@ -305,6 +402,21 @@ void display_menu(const char **items, uint8_t num_items, uint8_t selected)
     for (uint8_t i = 0; i < visible_items && (i + scroll_offset) < num_items; i++)
     {
         uint8_t item_index = i + scroll_offset;
+
+        // Validate array index
+        if (item_index >= num_items)
+        {
+            ESP_LOGW(TAG, "display_menu: item_index=%d out of bounds", item_index);
+            break;
+        }
+
+        // Validate item pointer
+        if (items[item_index] == NULL)
+        {
+            ESP_LOGW(TAG, "display_menu: items[%d] is NULL", item_index);
+            continue;
+        }
+
         char line[21];
         if (item_index == selected)
         {
@@ -401,7 +513,12 @@ void display_draw_progress_bar(uint8_t x, uint8_t y, uint8_t width, uint8_t heig
 // Display a large number (0-99)
 void display_large_number(uint8_t x, uint8_t y, uint8_t number)
 {
-    (void)number; // Suppress unused warning
+    // Clamp number to valid range
+    if (number > 99)
+    {
+        ESP_LOGW(TAG, "display_large_number: number=%d clamped to 99", number);
+        number = 99;
+    }
 
     // For simplicity, use scaled-up regular font
     char buf[4];
@@ -416,7 +533,7 @@ void display_large_number(uint8_t x, uint8_t y, uint8_t number)
         }
 
         int idx = c - 32;
-        if (idx < 96) {
+        if (idx >= 0 && idx < 96) {
             for (int col = 0; col < 5; col++) {
                 uint8_t line = font5x8[idx][col];
                 for (int bit = 0; bit < 8; bit++) {
@@ -424,7 +541,13 @@ void display_large_number(uint8_t x, uint8_t y, uint8_t number)
                         // Scale 3x
                         for (int sx = 0; sx < 3; sx++) {
                             for (int sy = 0; sy < 3; sy++) {
-                                display_set_pixel(x + col * 3 + sx, y + bit * 3 + sy, true);
+                                // Bounds check before setting pixel
+                                uint8_t px = x + col * 3 + sx;
+                                uint8_t py = y + bit * 3 + sy;
+                                if (px < SH1106_WIDTH && py < SH1106_HEIGHT)
+                                {
+                                    display_set_pixel(px, py, true);
+                                }
                             }
                         }
                     }
@@ -445,6 +568,12 @@ void display_invert(bool inverted)
 // Display large text (4x scaled)
 void display_large_text(uint8_t x, uint8_t y, const char *text)
 {
+    if (text == NULL)
+    {
+        ESP_LOGW(TAG, "display_large_text: NULL text pointer");
+        return;
+    }
+
     for (int i = 0; text[i] != '\0'; i++) {
         char c = text[i];
         if (c == ' ') {
@@ -453,7 +582,7 @@ void display_large_text(uint8_t x, uint8_t y, const char *text)
         }
 
         int idx = c - 32;
-        if (idx < 96) {
+        if (idx >= 0 && idx < 96) {
             for (int col = 0; col < 5; col++) {
                 uint8_t line = font5x8[idx][col];
                 for (int bit = 0; bit < 8; bit++) {
@@ -461,7 +590,13 @@ void display_large_text(uint8_t x, uint8_t y, const char *text)
                         // Scale 4x for larger text
                         for (int sx = 0; sx < 4; sx++) {
                             for (int sy = 0; sy < 4; sy++) {
-                                display_set_pixel(x + col * 4 + sx, y + bit * 4 + sy, true);
+                                // Bounds check before setting pixel
+                                uint8_t px = x + col * 4 + sx;
+                                uint8_t py = y + bit * 4 + sy;
+                                if (px < SH1106_WIDTH && py < SH1106_HEIGHT)
+                                {
+                                    display_set_pixel(px, py, true);
+                                }
                             }
                         }
                     }

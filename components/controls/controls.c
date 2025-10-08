@@ -63,9 +63,21 @@ static void IRAM_ATTR rotary_isr_handler(void *arg)
 
 static void IRAM_ATTR button_isr_handler(void *arg)
 {
+    // Validation: Check for NULL argument (should never happen, but defensive programming)
+    if (arg == NULL)
+    {
+        return;
+    }
+
     uint32_t pin = (uint32_t)arg;
     uint32_t now = xTaskGetTickCountFromISR();
     uint32_t debounce_ticks = pdMS_TO_TICKS(DEBOUNCE_TIME_MS);
+
+    // Validation: Ensure pin number is valid GPIO
+    if (pin >= GPIO_NUM_MAX)
+    {
+        return;
+    }
 
     if (pin == CONFIRM_BUTTON_PIN)
     {

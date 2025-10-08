@@ -99,13 +99,14 @@ esp_err_t heating_init(void)
  */
 void heating_set_power(uint8_t power_percent)
 {
-    // Check if heating switch is enabled
+    // Validation: Check if heating switch is enabled
     if (!controls_is_heating_switch_on() && power_percent > 0)
     {
         ESP_LOGW(TAG, "Heating switch is OFF - cannot apply power (requested %d%%)", power_percent);
         power_percent = 0;  // Force to zero if switch is off
     }
 
+    // Validation: Clamp power to maximum allowed
     if (power_percent > HEATING_POWER_MAX_PERCENT)
     {
         ESP_LOGW(TAG, "Power clamped from %d%% to %d%%",
@@ -116,8 +117,27 @@ void heating_set_power(uint8_t power_percent)
     // Convert percentage to LEDC duty cycle (0-1023 for 10-bit resolution)
     uint32_t duty = (power_percent * ((1 << LEDC_DUTY_RES) - 1)) / 100;
 
-    ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, duty);
-    ledc_update_duty(LEDC_MODE, LEDC_CHANNEL);
+    // Validation: Ensure duty cycle is within LEDC bounds
+    uint32_t max_duty = (1 << LEDC_DUTY_RES) - 1;
+    if (duty > max_duty)
+    {
+        ESP_LOGW(TAG, "Duty cycle %lu exceeds maximum %lu, clamping", duty, max_duty);
+        duty = max_duty;
+    }
+
+    esp_err_t ret = ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, duty);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to set LEDC duty: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    ret = ledc_update_duty(LEDC_MODE, LEDC_CHANNEL);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to update LEDC duty: %s", esp_err_to_name(ret));
+        return;
+    }
 
     // Update simulation model if in simulation mode
     if (sensor_is_simulation_mode())
@@ -168,6 +188,39 @@ bool heating_is_active(void)
  */
 void pid_init(pid_config_t config)
 {
+    // Validation: Check PID parameters are within reasonable bounds
+    if (config.kp < 0.0f || config.kp > 1000.0f)
+    {
+        ESP_LOGW(TAG, "pid_init: Kp=%.2f out of range [0, 1000], clamping", config.kp);
+        config.kp = CLAMP(config.kp, 0.0f, 1000.0f);
+    }
+
+    if (config.ki < 0.0f || config.ki > 100.0f)
+    {
+        ESP_LOGW(TAG, "pid_init: Ki=%.2f out of range [0, 100], clamping", config.ki);
+        config.ki = CLAMP(config.ki, 0.0f, 100.0f);
+    }
+
+    if (config.kd < 0.0f || config.kd > 1000.0f)
+    {
+        ESP_LOGW(TAG, "pid_init: Kd=%.2f out of range [0, 1000], clamping", config.kd);
+        config.kd = CLAMP(config.kd, 0.0f, 1000.0f);
+    }
+
+    if (config.setpoint < 0.0f || config.setpoint > 300.0f)
+    {
+        ESP_LOGW(TAG, "pid_init: Setpoint=%.2f out of range [0, 300], clamping", config.setpoint);
+        config.setpoint = CLAMP(config.setpoint, 0.0f, 300.0f);
+    }
+
+    if (config.output_min > config.output_max)
+    {
+        ESP_LOGW(TAG, "pid_init: output_min > output_max, swapping");
+        float temp = config.output_min;
+        config.output_min = config.output_max;
+        config.output_max = temp;
+    }
+
     pid_controller_init(&g_pid_controller, config);
 }
 
