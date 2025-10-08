@@ -119,6 +119,25 @@ bool has_reached_target_temp_once(void);
  */
 bool is_heat_press_ready(void);
 
+/**
+ * @brief Cleanup and shutdown all system components
+ *
+ * Safely deinitializes all hardware components in the correct order.
+ * Ensures heating is off and all resources are properly freed.
+ * Safe to call even if initialization failed.
+ */
+void system_cleanup(void);
+
+/**
+ * @brief Attempt to recover from emergency shutdown state
+ *
+ * Checks if conditions are safe to resume normal operation and
+ * releases emergency shutdown if recovery is possible.
+ *
+ * @return true if recovery successful, false if still unsafe
+ */
+bool attempt_emergency_recovery(void);
+
 // =============================================================================
 // System Constants
 // =============================================================================

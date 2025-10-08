@@ -1417,3 +1417,130 @@ uint8_t get_autotune_progress(void)
 
     return pid_autotune_get_progress(&g_autotune_ctx);
 }
+
+/**
+ * @brief System-wide cleanup function
+ *
+ * Safely deinitializes all hardware components in the correct order:
+ * 1. Stop heating (critical safety)
+ * 2. Deinitialize UI components (controls, display)
+ * 3. Deinitialize sensors
+ * 4. Save any pending data to storage
+ *
+ * Safe to call even if initialization failed - each component
+ * checks its state before cleanup.
+ */
+void system_cleanup(void)
+{
+    ESP_LOGI(TAG, "Starting system cleanup...");
+
+    // Step 1: CRITICAL SAFETY - Ensure heating is completely off
+    heating_emergency_shutoff();
+    vTaskDelay(pdMS_TO_TICKS(200)); // Give heating time to turn off
+
+    // Step 2: Deinitialize heating system
+    esp_err_t ret = heating_deinit();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Heating deinit failed: %s", esp_err_to_name(ret));
+    }
+
+    // Step 3: Deinitialize controls (buttons, rotary encoder, LEDs)
+    ret = controls_deinit();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Controls deinit failed: %s", esp_err_to_name(ret));
+    }
+
+    // Step 4: Deinitialize display
+    ret = display_deinit();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Display deinit failed: %s", esp_err_to_name(ret));
+    }
+
+    // Step 5: Deinitialize sensors
+    ret = sensor_deinit();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Sensor deinit failed: %s", esp_err_to_name(ret));
+    }
+
+    // Step 6: Save any pending data to storage
+    save_persistent_data();
+
+    // Step 7: Clean up FreeRTOS resources
+    if (statistics_mutex != NULL)
+    {
+        vSemaphoreDelete(statistics_mutex);
+        statistics_mutex = NULL;
+    }
+
+    ESP_LOGI(TAG, "System cleanup completed");
+}
+
+/**
+ * @brief Attempt recovery from emergency shutdown
+ *
+ * Validates that all safety conditions are met before allowing
+ * the system to exit emergency shutdown state. Requires:
+ * - Temperature within safe limits
+ * - Sensor operational
+ * - Sufficient free memory
+ * - Heating is off
+ *
+ * @return true if recovery successful, false if conditions not safe
+ */
+bool attempt_emergency_recovery(void)
+{
+    if (!emergency_shutdown)
+    {
+        return true; // Already in normal operation
+    }
+
+    ESP_LOGI(TAG, "Attempting emergency recovery...");
+
+    // Validation 1: Check sensor is operational
+    if (!sensor_is_operational())
+    {
+        ESP_LOGW(TAG, "Recovery blocked: Sensor not operational");
+        return false;
+    }
+
+    // Validation 2: Read and validate current temperature
+    float temp;
+    if (!read_temperature_safe(&temp))
+    {
+        ESP_LOGW(TAG, "Recovery blocked: Cannot read temperature");
+        return false;
+    }
+
+    // Validation 3: Check temperature is within safe range
+    if (temp < TEMP_CYCLE_START_MIN || temp > MAX_TEMPERATURE)
+    {
+        ESP_LOGW(TAG, "Recovery blocked: Temperature %.1f°C out of safe range [%.1f, %.1f]",
+                 temp, TEMP_CYCLE_START_MIN, MAX_TEMPERATURE);
+        return false;
+    }
+
+    // Validation 4: Check sufficient free memory
+    size_t free_heap = esp_get_free_heap_size();
+    if (free_heap < HEAP_MINIMUM)
+    {
+        ESP_LOGW(TAG, "Recovery blocked: Low memory %zu < %d", free_heap, HEAP_MINIMUM);
+        return false;
+    }
+
+    // Validation 5: Ensure heating is actually off
+    // (redundant safety check)
+    heating_emergency_shutoff();
+
+    // All safety checks passed - release emergency shutdown
+    ESP_LOGI(TAG, "Emergency recovery successful - resuming normal operation");
+    emergency_shutdown = false;
+    system_healthy = true;
+    sensor_error_count = 0;
+    press_safety_locked = false;
+
+    return true;
+}

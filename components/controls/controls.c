@@ -193,6 +193,37 @@ esp_err_t controls_init(void)
     return ESP_OK;
 }
 
+esp_err_t controls_deinit(void)
+{
+    ESP_LOGI(TAG, "Deinitializing controls");
+
+    // Turn off LEDs
+    controls_set_led_green(false);
+    controls_set_led_blue(false);
+
+    // Remove ISR handlers
+    gpio_isr_handler_remove(ROTARY_A_PIN);
+    gpio_isr_handler_remove(ROTARY_B_PIN);
+    gpio_isr_handler_remove(CONFIRM_BUTTON_PIN);
+    gpio_isr_handler_remove(BACK_BUTTON_PIN);
+    gpio_isr_handler_remove(PAUSE_BUTTON_PIN);
+    gpio_isr_handler_remove(ROTARY_BUTTON_PIN);
+
+    // Uninstall ISR service
+    gpio_uninstall_isr_service();
+
+    // Reset state variables
+    rotary_counter = 0;
+    rotary_state = 0;
+    confirm_pressed = false;
+    back_pressed = false;
+    pause_pressed = false;
+    rotary_button_pressed = false;
+
+    ESP_LOGI(TAG, "Controls deinitialized successfully");
+    return ESP_OK;
+}
+
 button_event_t controls_get_button_event(void)
 {
     if (confirm_pressed)

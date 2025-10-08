@@ -206,6 +206,52 @@ esp_err_t sensor_init(void)
 }
 
 /**
+ * @brief Deinitialize the MAX31855 temperature sensor
+ *
+ * Cleans up SPI resources and resets sensor state. Safe to call
+ * even if sensor_init() was not called or failed.
+ *
+ * @return ESP_OK on success, error code on failure
+ */
+esp_err_t sensor_deinit(void)
+{
+    ESP_LOGI(TAG, "Deinitializing sensor");
+
+    // In simulation mode, just reset state
+    if (SYSTEM_CONFIG.simulation.enabled)
+    {
+        sim_current_temp = sim_ambient_temp;
+        sim_last_update_time = 0;
+        sim_heating_power = 0.0f;
+        ESP_LOGI(TAG, "Simulation mode deinitialized");
+        return ESP_OK;
+    }
+
+    // Real hardware mode - clean up SPI resources
+    esp_err_t ret = ESP_OK;
+
+    if (spi_handle != NULL)
+    {
+        ret = spi_bus_remove_device(spi_handle);
+        if (ret != ESP_OK)
+        {
+            ESP_LOGW(TAG, "Failed to remove SPI device: %s", esp_err_to_name(ret));
+        }
+        spi_handle = NULL;
+    }
+
+    // Free the SPI bus
+    ret = spi_bus_free(SPI_HOST);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Failed to free SPI bus: %s", esp_err_to_name(ret));
+    }
+
+    ESP_LOGI(TAG, "Sensor deinitialized successfully");
+    return ret;
+}
+
+/**
  * @brief Read temperature from MAX31855 sensor
  *
  * Performs SPI transaction to read 32-bit data from MAX31855 and converts

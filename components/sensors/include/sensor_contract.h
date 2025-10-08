@@ -9,6 +9,9 @@
 // Initialize sensor
 esp_err_t sensor_init(void);
 
+// Deinitialize sensor and free resources
+esp_err_t sensor_deinit(void);
+
 // Read temperature in Celsius
 // Returns true on success, false on failure
 bool sensor_read_temperature(float *temperature);

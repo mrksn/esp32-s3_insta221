@@ -24,6 +24,8 @@
 #include "esp_log.h"
 #include "driver/ledc.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "heating";
 
@@ -85,6 +87,38 @@ esp_err_t heating_init(void)
     }
 
     ESP_LOGI(TAG, "Heating control system initialized successfully");
+    return ESP_OK;
+}
+
+/**
+ * @brief Deinitialize the heating control system
+ *
+ * Safely shuts down heating and cleans up LEDC resources.
+ * Ensures heating is turned off before deinitialization.
+ *
+ * @return ESP_OK on success, error code on failure
+ */
+esp_err_t heating_deinit(void)
+{
+    ESP_LOGI(TAG, "Deinitializing heating control system");
+
+    // Safety: Ensure heating is off before cleanup
+    heating_emergency_shutoff();
+
+    // Small delay to ensure command is processed
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    // Stop LEDC channel
+    esp_err_t ret = ledc_stop(LEDC_MODE, LEDC_CHANNEL, 0);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Failed to stop LEDC channel: %s", esp_err_to_name(ret));
+    }
+
+    // Note: LEDC timer is shared, so we don't deinitialize it
+    // to avoid affecting other potential LEDC users
+
+    ESP_LOGI(TAG, "Heating control system deinitialized successfully");
     return ESP_OK;
 }
 

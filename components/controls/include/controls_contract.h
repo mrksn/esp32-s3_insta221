@@ -27,6 +27,9 @@ typedef enum
 // Initialize controls
 esp_err_t controls_init(void);
 
+// Deinitialize controls and free resources
+esp_err_t controls_deinit(void);
+
 // Get next button event (non-blocking)
 button_event_t controls_get_button_event(void);
 

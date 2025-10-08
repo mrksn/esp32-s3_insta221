@@ -9,6 +9,9 @@
 // Initialize heating system
 esp_err_t heating_init(void);
 
+// Deinitialize heating system and free resources
+esp_err_t heating_deinit(void);
+
 // Set heater power (0-100%)
 void heating_set_power(uint8_t power_percent);
 
