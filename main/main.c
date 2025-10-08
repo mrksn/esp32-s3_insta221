@@ -22,6 +22,7 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_log.h"
@@ -65,6 +66,9 @@ uint32_t system_start_time = 0;      ///< Timestamp when system started (for hea
 uint32_t time_to_target_temp = 0;    ///< Time in seconds to reach target temperature (0 = not yet reached)
 bool target_temp_reached = false;    ///< Whether target temperature has been reached for the first time
 
+// Heat press ready state tracking
+bool target_temp_reached_once = false; ///< Whether target temp has been reached at least once since boot
+
 // Error state and safety management
 bool emergency_shutdown = false;      ///< Emergency shutdown flag
 uint8_t sensor_error_count = 0;       ///< Count of consecutive sensor read failures
@@ -91,6 +95,9 @@ static uint32_t state_transition_time = 0; ///< Time when UI state transitioned 
 // Auto-tune state (NEW)
 static autotune_context_t g_autotune_ctx;  ///< Auto-tune context
 static bool is_autotuning = false;         ///< Auto-tune in progress flag
+
+// Thread safety - Mutexes for shared data
+static SemaphoreHandle_t statistics_mutex = NULL;  ///< Mutex for statistics access
 
 // =============================================================================
 // Function Prototypes
@@ -123,6 +130,12 @@ bool can_operate_normally(void);                    ///< Check if system can ope
 void update_led_indicators(void);                   ///< Update LED indicators based on system state
 void handle_pause_button(void);                     ///< Handle pause button press
 void control_heating_with_hysteresis(float pid_output); ///< Control heating with hysteresis logic
+bool has_reached_target_temp_once(void);            ///< Check if target temp was reached at least once since boot
+bool is_heat_press_ready(void);                     ///< Check if heat press is ready for pressing (includes heating active)
+
+// Thread-safe statistics access helpers
+static inline void stats_lock(void) { xSemaphoreTake(statistics_mutex, portMAX_DELAY); }
+static inline void stats_unlock(void) { xSemaphoreGive(statistics_mutex); }
 
 /**
  * @brief Main application entry point
@@ -138,6 +151,15 @@ void control_heating_with_hysteresis(float pid_output); ///< Control heating wit
 void app_main(void)
 {
     ESP_LOGI(TAG, "Starting Insta Retrofit application");
+
+    // Create mutexes for thread-safe access to shared data
+    statistics_mutex = xSemaphoreCreateMutex();
+    if (statistics_mutex == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create statistics mutex");
+        emergency_shutdown_system("Mutex creation failure");
+        return;
+    }
 
     // Initialize defaults first
     init_defaults();
@@ -546,7 +568,9 @@ void temp_control_task(void *pvParameters)
         {
             // Sensor read failed - implement retry and escalation strategy
             sensor_error_count++;
+            stats_lock();
             statistics.sensor_failures++;
+            stats_unlock();
             ESP_LOGW(TAG, "Temperature sensor read failed (attempt %d/%d)",
                      sensor_error_count, SENSOR_RETRY_COUNT);
 
@@ -791,7 +815,8 @@ void complete_pressing_cycle(void)
         // Update cycle completion
         current_cycle.status = COMPLETE;
 
-        // Update statistics - total presses
+        // Update statistics - total presses (thread-safe)
+        stats_lock();
         statistics.total_presses++;
         statistics.presses_since_pid_tune++;
 
@@ -801,6 +826,7 @@ void complete_pressing_cycle(void)
         {
             statistics.presses_in_tolerance++;
         }
+        stats_unlock();
 
         // Check if we're in free press mode
         if (ui_is_free_press_mode())
@@ -936,8 +962,10 @@ void emergency_shutdown_system(const char *reason)
     emergency_shutdown = true;
     system_healthy = false;
 
-    // Track emergency stop
+    // Track emergency stop (thread-safe)
+    stats_lock();
     statistics.emergency_stops++;
+    stats_unlock();
 
     ESP_LOGE(TAG, "EMERGENCY SHUTDOWN: %s", reason);
 
@@ -1069,6 +1097,13 @@ bool validate_cycle_safety(void)
         return false;
     }
 
+    // Check if heat press is in ready state (includes all necessary temperature checks)
+    if (!is_heat_press_ready())
+    {
+        ESP_LOGW(TAG, "Cycle safety: heat press not ready");
+        return false;
+    }
+
     // Check temperature is reasonable for starting a cycle
     if (current_temperature > (settings.target_temp + TEMP_CYCLE_START_MAX_OFFSET))
     {
@@ -1114,6 +1149,55 @@ bool can_operate_normally(void)
 }
 
 /**
+ * @brief Check if target temperature has been reached at least once since boot
+ *
+ * This is a persistent state flag that indicates the heat press has been
+ * properly warmed up at least once during this session.
+ *
+ * @return true if target temperature was reached at least once since boot
+ */
+bool has_reached_target_temp_once(void)
+{
+    return target_temp_reached_once;
+}
+
+/**
+ * @brief Check if heat press is in full ready state for pressing
+ *
+ * Heat press is ready when:
+ * 1. Target temperature has been reached at least once since boot, AND
+ * 2. Heating switch is connected (heating is active), AND
+ * 3. Current temperature is within ±5°C of target temperature
+ *
+ * @return true if heat press is ready for pressing operations
+ */
+bool is_heat_press_ready(void)
+{
+    // Check if target temperature was reached at least once since boot
+    if (!target_temp_reached_once)
+    {
+        return false;
+    }
+
+    // Check if heating switch is connected
+    if (!heating_is_active())
+    {
+        return false;
+    }
+
+    // Check if current temperature is within ±5°C of target
+    float temp_lower_bound = settings.target_temp - TEMP_HYSTERESIS;
+    float temp_upper_bound = settings.target_temp + TEMP_HYSTERESIS;
+
+    if (current_temperature < temp_lower_bound || current_temperature > temp_upper_bound)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+/**
  * @brief Update LED indicators based on system state
  *
  * Controls the green LED (temperature ready) and blue LED (pause mode)
@@ -1134,13 +1218,24 @@ void update_led_indicators(void)
         time_to_target_temp = current_time - system_start_time;
         target_temp_reached = true;
 
-        // Update warmup statistics
+        // Update warmup statistics (thread-safe)
+        stats_lock();
         statistics.total_warmup_time += time_to_target_temp;
         statistics.warmup_count++;
         statistics.avg_warmup_time = (float)statistics.total_warmup_time / statistics.warmup_count;
+        float avg_warmup = statistics.avg_warmup_time; // Copy for logging
+        stats_unlock();
 
         ESP_LOGI(TAG, "Target temperature reached in %lu seconds (avg: %.1fs)",
-                 time_to_target_temp, statistics.avg_warmup_time);
+                 time_to_target_temp, avg_warmup);
+    }
+
+    // Set target_temp_reached_once flag when temperature reaches target for the first time
+    // This flag persists throughout the session (doesn't reset if temperature drops)
+    if (temp_ready && !target_temp_reached_once)
+    {
+        target_temp_reached_once = true;
+        ESP_LOGI(TAG, "Heat press ready state: target temperature reached for first time since boot");
     }
 
     // Blue LED: System is in pause mode

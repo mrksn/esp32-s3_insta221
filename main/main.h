@@ -97,6 +97,28 @@ void reset_error_state(void);
  */
 bool validate_cycle_safety(void);
 
+/**
+ * @brief Check if target temperature has been reached at least once since boot
+ *
+ * This is a persistent state flag that indicates the heat press has been
+ * properly warmed up at least once during this session.
+ *
+ * @return true if target temperature was reached at least once since boot
+ */
+bool has_reached_target_temp_once(void);
+
+/**
+ * @brief Check if heat press is in full ready state for pressing
+ *
+ * Heat press is ready when:
+ * 1. Target temperature has been reached at least once since boot, AND
+ * 2. Heating switch is connected (heating is active), AND
+ * 3. Current temperature is within ±5°C of target temperature
+ *
+ * @return true if heat press is ready for pressing operations
+ */
+bool is_heat_press_ready(void);
+
 // =============================================================================
 // System Constants
 // =============================================================================

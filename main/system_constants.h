@@ -79,11 +79,30 @@
 /** Temperature offset for error recovery (°C) */
 #define TEMP_RECOVERY_OFFSET 10.0f
 
+/** Minimum temperature threshold to allow pressing (°C) - shows heat-up screen if below */
+#define TEMP_MIN_FOR_PRESSING 100.0f
+
 // =============================================================================
 // Default Values
 // =============================================================================
 
 /** Default temperature reading when sensor fails (°C) */
 #define DEFAULT_TEMPERATURE 25.0f
+
+// =============================================================================
+// Heat Up Display Constants
+// =============================================================================
+
+/** Minimum temperature change required before calculating ETA (°C) */
+#define HEAT_UP_MIN_TEMP_CHANGE 0.5f
+
+/** Minimum elapsed time before calculating ETA (seconds) */
+#define HEAT_UP_MIN_ELAPSED_TIME 10
+
+/** Minimum heating rate for valid ETA calculation (°C/second) */
+#define HEAT_UP_MIN_HEATING_RATE 0.01f
+
+/** Temperature threshold to consider heat-up complete (°C) */
+#define HEAT_UP_TEMP_READY_THRESHOLD 1.0f
 
 #endif // SYSTEM_CONSTANTS_H
