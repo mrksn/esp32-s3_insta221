@@ -249,16 +249,66 @@ esp_err_t display_init(void)
     // Initialize display buffer
     memset(display_buffer, 0, sizeof(display_buffer));
 
-    // SH1106 initialization sequence
-    i2c_write_cmd(SH1106_CMD_DISPLAY_OFF);
-    i2c_write_cmd(SH1106_CMD_SET_CONTRAST);
-    i2c_write_cmd(0x7F); // Contrast value
-    i2c_write_cmd(SH1106_CMD_SEG_REMAP);      // Flip horizontally
-    i2c_write_cmd(SH1106_CMD_COM_SCAN_DEC);   // Flip vertically
-    i2c_write_cmd(SH1106_CMD_DISPLAY_ON);
+    // SH1106 initialization sequence with error checking
+    ret = i2c_write_cmd(SH1106_CMD_DISPLAY_OFF);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to send display OFF command: %s", esp_err_to_name(ret));
+        goto cleanup;
+    }
+
+    ret = i2c_write_cmd(SH1106_CMD_SET_CONTRAST);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to send contrast command: %s", esp_err_to_name(ret));
+        goto cleanup;
+    }
+
+    ret = i2c_write_cmd(0x7F); // Contrast value
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to send contrast value: %s", esp_err_to_name(ret));
+        goto cleanup;
+    }
+
+    ret = i2c_write_cmd(SH1106_CMD_SEG_REMAP); // Flip horizontally
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to send segment remap command: %s", esp_err_to_name(ret));
+        goto cleanup;
+    }
+
+    ret = i2c_write_cmd(SH1106_CMD_COM_SCAN_DEC); // Flip vertically
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to send COM scan command: %s", esp_err_to_name(ret));
+        goto cleanup;
+    }
+
+    ret = i2c_write_cmd(SH1106_CMD_DISPLAY_ON);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to send display ON command: %s", esp_err_to_name(ret));
+        goto cleanup;
+    }
 
     ESP_LOGI(TAG, "SH1106 display initialized successfully");
     return ESP_OK;
+
+cleanup:
+    // Cleanup on initialization failure
+    ESP_LOGE(TAG, "Display initialization failed, cleaning up resources");
+    if (sh1106_dev_handle != NULL)
+    {
+        i2c_master_bus_rm_device(sh1106_dev_handle);
+        sh1106_dev_handle = NULL;
+    }
+    if (i2c_bus_handle != NULL)
+    {
+        i2c_del_master_bus(i2c_bus_handle);
+        i2c_bus_handle = NULL;
+    }
+    return ret;
 }
 
 esp_err_t display_deinit(void)

@@ -195,6 +195,9 @@ esp_err_t sensor_init(void)
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "Failed to add MAX31855 SPI device: %s", esp_err_to_name(ret));
+        // Cleanup: Free SPI bus on device addition failure
+        spi_bus_free(SPI_HOST);
+        spi_handle = NULL;
         return ret;
     }
 
