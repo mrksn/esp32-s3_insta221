@@ -113,8 +113,25 @@ typedef enum
     UI_EVENT_TIMEOUT
 } ui_event_t;
 
+// Callback function types for decoupling UI from main
+typedef bool (*ui_autotune_start_fn)(float target_temp);
+typedef bool (*ui_autotune_is_running_fn)(void);
+typedef uint8_t (*ui_autotune_get_progress_fn)(void);
+typedef const statistics_t* (*ui_get_statistics_fn)(void);
+typedef uint32_t (*ui_get_warmup_time_fn)(void);
+
+// Callback structure
+typedef struct {
+    ui_autotune_start_fn start_autotune;
+    ui_autotune_is_running_fn is_autotuning;
+    ui_autotune_get_progress_fn get_autotune_progress;
+    ui_get_statistics_fn get_statistics;
+    ui_get_warmup_time_fn get_warmup_time;
+} ui_callbacks_t;
+
 // UI State Machine
 void ui_init(settings_t *settings, print_run_t *print_run);
+void ui_register_callbacks(const ui_callbacks_t *callbacks);
 void ui_update(float current_temp);
 ui_event_t ui_get_event(void);
 void ui_process_event(ui_event_t event);

@@ -134,9 +134,38 @@ void control_heating_with_hysteresis(float pid_output); ///< Control heating wit
 bool has_reached_target_temp_once(void);            ///< Check if target temp was reached at least once since boot
 bool is_heat_press_ready(void);                     ///< Check if heat press is ready for pressing (includes heating active)
 
+// PID Autotune Functions
+bool start_pid_autotune(float target_temp);         ///< Start PID auto-tune process
+bool is_pid_autotuning(void);                       ///< Check if auto-tune is in progress
+uint8_t get_autotune_progress(void);                ///< Get auto-tune progress percentage
+
 // Thread-safe statistics access helpers
 static inline void stats_lock(void) { xSemaphoreTake(statistics_mutex, portMAX_DELAY); }
 static inline void stats_unlock(void) { xSemaphoreGive(statistics_mutex); }
+
+// =============================================================================
+// UI Callback Wrappers (for breaking circular dependencies)
+// =============================================================================
+
+/**
+ * @brief Callback wrapper to get statistics pointer
+ *
+ * Provides read-only access to statistics for UI display.
+ */
+static const statistics_t* ui_callback_get_statistics(void)
+{
+    return &statistics;
+}
+
+/**
+ * @brief Callback wrapper to get warmup time
+ *
+ * Returns the time to reach target temperature.
+ */
+static uint32_t ui_callback_get_warmup_time(void)
+{
+    return time_to_target_temp;
+}
 
 /**
  * @brief Main application entry point
@@ -232,6 +261,16 @@ void app_main(void)
 
     // Initialize user interface
     ui_init(&settings, &print_run);
+
+    // Register UI callbacks to break circular dependencies
+    ui_callbacks_t ui_callbacks = {
+        .start_autotune = start_pid_autotune,
+        .is_autotuning = is_pid_autotuning,
+        .get_autotune_progress = get_autotune_progress,
+        .get_statistics = ui_callback_get_statistics,
+        .get_warmup_time = ui_callback_get_warmup_time
+    };
+    ui_register_callbacks(&ui_callbacks);
 
     // Initialize safety state - start with all safety systems engaged
     emergency_shutdown = false;
@@ -1543,4 +1582,18 @@ bool attempt_emergency_recovery(void)
     press_safety_locked = false;
 
     return true;
+}
+
+/**
+ * @brief Reset all statistics counters
+ *
+ * Thread-safe operation that resets all statistics tracking data.
+ */
+void reset_all_statistics(void)
+{
+    stats_lock();
+    memset(&statistics, 0, sizeof(statistics_t));
+    statistics.session_start_time = esp_timer_get_time() / 1000000;
+    stats_unlock();
+    ESP_LOGI(TAG, "All statistics reset");
 }

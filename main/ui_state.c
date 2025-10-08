@@ -109,11 +109,8 @@ static print_run_t *current_run = NULL;
 // Current temperature for display
 static float temperature_display_celsius = 0.0f;
 
-// External variables for heat-up time tracking (DEBUG - for PID tuning)
-extern uint32_t time_to_target_temp;
-
-// External statistics tracking
-extern statistics_t statistics;
+// Callback functions (registered during initialization)
+static ui_callbacks_t ui_callbacks = {0};
 
 // Job setup state
 static int job_setup_selected_index = 0;
@@ -177,11 +174,6 @@ static ui_state_t heat_up_return_state = UI_STATE_MAIN_MENU; ///< State to retur
 static bool heat_up_heating_was_active = false;   ///< Tracks heating switch state changes
 static uint32_t heat_up_last_update_sec = 0;      ///< Last elapsed second when display updated
 static bool heat_up_screen_initialized = false;   ///< Whether screen has been initialized
-
-// External functions from main.c
-extern bool start_pid_autotune(float target_temp);
-extern bool is_pid_autotuning(void);
-extern uint8_t get_autotune_progress(void);
 
 // =============================================================================
 // Helper Function Prototypes
@@ -323,6 +315,18 @@ void ui_init(settings_t *settings, print_run_t *print_run)
     current_run = print_run;
     ui_current_state = UI_STATE_STARTUP; // Start with startup screen
     ESP_LOGI(TAG, "UI state machine initialized - showing startup screen");
+}
+
+void ui_register_callbacks(const ui_callbacks_t *callbacks)
+{
+    if (callbacks == NULL)
+    {
+        ESP_LOGE(TAG, "ui_register_callbacks: NULL callbacks pointer");
+        return;
+    }
+
+    ui_callbacks = *callbacks;
+    ESP_LOGI(TAG, "UI callbacks registered successfully");
 }
 
 void ui_update(float current_temp)
@@ -1184,7 +1188,8 @@ static void handle_pid_menu_state(ui_event_t event)
             if (pid_selected_index == PID_AUTOTUNE)
             {
                 // Start auto-tune at current target temperature
-                if (start_pid_autotune(current_settings->target_temp))
+                if (ui_callbacks.start_autotune != NULL &&
+                    ui_callbacks.start_autotune(current_settings->target_temp))
                 {
                     ui_current_state = UI_STATE_AUTOTUNE;
                     ESP_LOGI(TAG, "Starting auto-tune from UI");
@@ -2058,8 +2063,18 @@ static void render_stats_production(void)
 
     display_text(0, 0, "== Production ==");
 
+    // Get statistics via callback
+    const statistics_t *stats = (ui_callbacks.get_statistics != NULL) ?
+                                ui_callbacks.get_statistics() : NULL;
+    if (stats == NULL)
+    {
+        display_text(0, 2, "No stats available");
+        display_flush();
+        return;
+    }
+
     // Total presses
-    sprintf(buffer, "Total: %lu", statistics.total_presses);
+    sprintf(buffer, "Total: %lu", stats->total_presses);
     display_text(0, 1, buffer);
 
     // Calculate current session time
@@ -2068,7 +2083,7 @@ static void render_stats_production(void)
     uint32_t session_time = (system_start_time > 0) ? (current_time - system_start_time) : 0;
 
     // Operating time (use session time if total_operating_time not tracked)
-    uint32_t op_time = (statistics.total_operating_time > 0) ? statistics.total_operating_time : session_time;
+    uint32_t op_time = (stats->total_operating_time > 0) ? stats->total_operating_time : session_time;
     uint32_t hours = op_time / 3600;
     uint32_t mins = (op_time % 3600) / 60;
     sprintf(buffer, "Time: %luh %lum", hours, mins);
@@ -2076,9 +2091,9 @@ static void render_stats_production(void)
 
     // Idle time ratio
     uint32_t idle_pct = 0;
-    if (op_time > 0 && statistics.total_idle_time > 0)
+    if (op_time > 0 && stats->total_idle_time > 0)
     {
-        idle_pct = (statistics.total_idle_time * 100) / op_time;
+        idle_pct = (stats->total_idle_time * 100) / op_time;
     }
     sprintf(buffer, "Idle: %lu%%", idle_pct);
     display_text(0, 3, buffer);
@@ -2099,15 +2114,26 @@ static void render_stats_temperature(void)
             current_settings->target_temp);
     display_text(0, 1, buffer);
 
+    // Get statistics via callback
+    const statistics_t *stats = (ui_callbacks.get_statistics != NULL) ?
+                                ui_callbacks.get_statistics() : NULL;
+
     // Average warmup time (show even if zero)
-    extern uint32_t time_to_target_temp;
-    uint32_t warmup = (statistics.warmup_count > 0) ?
-                      (uint32_t)statistics.avg_warmup_time : time_to_target_temp;
+    uint32_t warmup = 0;
+    if (ui_callbacks.get_warmup_time != NULL)
+    {
+        warmup = ui_callbacks.get_warmup_time();
+    }
+    else if (stats != NULL && stats->warmup_count > 0)
+    {
+        warmup = (uint32_t)stats->avg_warmup_time;
+    }
     sprintf(buffer, "Warmup: %lus", warmup);
     display_text(0, 2, buffer);
 
     // Presses since PID tune
-    sprintf(buffer, "Since tune: %u", statistics.presses_since_pid_tune);
+    uint32_t presses_since_tune = (stats != NULL) ? stats->presses_since_pid_tune : 0;
+    sprintf(buffer, "Since tune: %lu", presses_since_tune);
     display_text(0, 3, buffer);
 
     display_flush();
@@ -2120,17 +2146,27 @@ static void render_stats_events(void)
 
     display_text(0, 0, "=== Events ===");
 
+    // Get statistics via callback
+    const statistics_t *stats = (ui_callbacks.get_statistics != NULL) ?
+                                ui_callbacks.get_statistics() : NULL;
+    if (stats == NULL)
+    {
+        display_text(0, 2, "No stats available");
+        display_flush();
+        return;
+    }
+
     // Aborted cycles
-    sprintf(buffer, "Aborted: %u", statistics.aborted_cycles);
+    sprintf(buffer, "Aborted: %u", stats->aborted_cycles);
     display_text(0, 1, buffer);
 
     // Errors
     sprintf(buffer, "Errors: %u",
-            statistics.temp_faults + statistics.sensor_failures);
+            stats->temp_faults + stats->sensor_failures);
     display_text(0, 2, buffer);
 
     // Emergency stops
-    sprintf(buffer, "E-stops: %u", statistics.emergency_stops);
+    sprintf(buffer, "E-stops: %u", stats->emergency_stops);
     display_text(0, 3, buffer);
 
     display_flush();
@@ -2143,35 +2179,45 @@ static void render_stats_kpis(void)
 
     display_text(0, 0, "===== KPIs =====");
 
+    // Get statistics via callback
+    const statistics_t *stats = (ui_callbacks.get_statistics != NULL) ?
+                                ui_callbacks.get_statistics() : NULL;
+    if (stats == NULL)
+    {
+        display_text(0, 2, "No stats available");
+        display_flush();
+        return;
+    }
+
     // Calculate session time for KPIs
     extern uint32_t system_start_time;
     uint32_t current_time = esp_timer_get_time() / 1000000;
     uint32_t session_time = (system_start_time > 0) ? (current_time - system_start_time) : 0;
-    uint32_t op_time = (statistics.total_operating_time > 0) ? statistics.total_operating_time : session_time;
+    uint32_t op_time = (stats->total_operating_time > 0) ? stats->total_operating_time : session_time;
 
     // Presses per hour
     uint32_t pph = 0;
     if (op_time > 0)
     {
-        pph = (statistics.total_presses * 3600) / op_time;
+        pph = (stats->total_presses * 3600) / op_time;
     }
     sprintf(buffer, "Press/hr: %lu", pph);
     display_text(0, 1, buffer);
 
     // Idle ratio
     uint32_t idle_ratio = 0;
-    if (op_time > 0 && statistics.total_idle_time > 0)
+    if (op_time > 0 && stats->total_idle_time > 0)
     {
-        idle_ratio = (statistics.total_idle_time * 100) / op_time;
+        idle_ratio = (stats->total_idle_time * 100) / op_time;
     }
     sprintf(buffer, "Idle: %lu%%", idle_ratio);
     display_text(0, 2, buffer);
 
     // Temperature stability (presses in tolerance)
     uint32_t stability = 0;
-    if (statistics.total_presses > 0)
+    if (stats->total_presses > 0)
     {
-        stability = (statistics.presses_in_tolerance * 100) / statistics.total_presses;
+        stability = (stats->presses_in_tolerance * 100) / stats->total_presses;
     }
     sprintf(buffer, "Temp OK: %lu%%", stability);
     display_text(0, 3, buffer);
@@ -2226,7 +2272,8 @@ static void render_autotune(void)
     display_text(0, 0, "Auto-Tuning PID");
 
     // Show progress
-    uint8_t progress = get_autotune_progress();
+    uint8_t progress = (ui_callbacks.get_autotune_progress != NULL) ?
+                       ui_callbacks.get_autotune_progress() : 0;
     sprintf(buffer, "Progress: %d%%", progress);
     display_text(0, 1, buffer);
 
@@ -2343,8 +2390,8 @@ static void perform_all_stats_reset(void)
 {
     ESP_LOGI(TAG, "Wiping all statistics");
 
-    memset(&statistics, 0, sizeof(statistics_t));
-    statistics.session_start_time = esp_timer_get_time() / 1000000;
+    // Reset statistics via main.h function (thread-safe)
+    reset_all_statistics();
 
     reset_free_press_stats();
     reset_print_run_stats();

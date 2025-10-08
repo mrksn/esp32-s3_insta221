@@ -129,6 +129,13 @@ bool is_heat_press_ready(void);
 void system_cleanup(void);
 
 /**
+ * @brief Reset all statistics counters
+ *
+ * Resets all statistics tracking data. Thread-safe operation.
+ */
+void reset_all_statistics(void);
+
+/**
  * @brief Attempt to recover from emergency shutdown state
  *
  * Checks if conditions are safe to resume normal operation and
