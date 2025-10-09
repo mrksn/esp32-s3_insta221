@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         "main.c"
         "ui_state.c"
+        "ui_helpers.c"
         "data_model.c"
         "utils/application_state.c"
         "utils/system_config.c"

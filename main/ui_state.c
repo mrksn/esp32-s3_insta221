@@ -32,11 +32,14 @@ static const char *TAG = "ui_state";
 // =============================================================================
 
 // Current state
-static ui_state_t ui_current_state = UI_STATE_INIT;
+// Non-static variables (shared with ui_helpers.c and future split files)
+ui_state_t ui_current_state = UI_STATE_INIT;
+bool display_needs_update = true;
+
+// Static variables (local to ui_state.c)
 static ui_state_t ui_previous_state = UI_STATE_INIT;
 static menu_item_t menu_selected_item = MENU_PROFILES;
 static settings_item_t settings_selected_item = SETTINGS_TIMERS;
-static bool display_needs_update = true;
 
 // Menu items
 static const char *main_menu_items[] = {
@@ -102,12 +105,12 @@ static int ui_adjustment_value = 0;
 static int ui_adjustment_min = 0;
 static int ui_adjustment_max = 100;
 
-// Settings and print run references
-static settings_t *current_settings = NULL;
-static print_run_t *current_run = NULL;
+// Settings and print run references (non-static - shared with ui_helpers.c)
+settings_t *current_settings = NULL;
+print_run_t *current_run = NULL;
 
-// Current temperature for display
-static float temperature_display_celsius = 0.0f;
+// Current temperature for display (non-static - shared with ui_helpers.c)
+float temperature_display_celsius = 0.0f;
 
 // Callback functions (registered during initialization)
 static ui_callbacks_t ui_callbacks = {0};
@@ -152,36 +155,40 @@ static float pid_staged_value = 0.0f;
 // Press state tracking
 static bool was_press_closed_ui = false;
 
-// Free press mode tracking
-static bool free_press_mode = false;              ///< Whether we're in free press mode (no job tracking)
-static uint16_t free_press_count = 0;             ///< Number of shirts pressed in free press mode
-static uint32_t free_press_time_elapsed = 0;      ///< Time elapsed in free press mode
-static uint32_t free_press_avg_time = 0;          ///< Average time per shirt in free press mode
-static uint32_t free_press_run_start_time = 0;    ///< When free press session started
+// Free press mode tracking (non-static - shared with ui_helpers.c)
+bool free_press_mode = false;              ///< Whether we're in free press mode (no job tracking)
+uint16_t free_press_count = 0;             ///< Number of shirts pressed in free press mode
+uint32_t free_press_time_elapsed = 0;      ///< Time elapsed in free press mode
+uint32_t free_press_avg_time = 0;          ///< Average time per shirt in free press mode
+uint32_t free_press_run_start_time = 0;    ///< When free press session started
 
 // Reset statistics state tracking
 static int reset_stats_selected_index = 0;        ///< Selected reset option (0=Job, 1=All)
 static uint32_t reset_stats_press_start_time = 0; ///< When encoder push started
 static bool reset_stats_button_pressed = false;   ///< Whether button is currently pressed
 
-// Heat up mode tracking
-static uint32_t heat_up_start_time = 0;           ///< When heat up started
-static float heat_up_start_temp = 0.0f;           ///< Temperature when heat up started
-static bool heat_up_heating_enabled = false;      ///< Whether heating was enabled when entering heat up mode
-static ui_state_t heat_up_return_state = UI_STATE_MAIN_MENU; ///< State to return to after heat-up completes
+// Heat up mode tracking (non-static - shared with ui_helpers.c)
+uint32_t heat_up_start_time = 0;           ///< When heat up started
+float heat_up_start_temp = 0.0f;           ///< Temperature when heat up started
+ui_state_t heat_up_return_state = UI_STATE_MAIN_MENU; ///< State to return to after heat-up completes
 
-// Heat up render state (moved from render function for better control)
-static bool heat_up_heating_was_active = false;   ///< Tracks heating switch state changes
-static uint32_t heat_up_last_update_sec = 0;      ///< Last elapsed second when display updated
-static bool heat_up_screen_initialized = false;   ///< Whether screen has been initialized
+// Heat up render state (non-static - shared with ui_helpers.c)
+bool heat_up_heating_was_active = false;   ///< Tracks heating switch state changes
+uint32_t heat_up_last_update_sec = 0;      ///< Last elapsed second when display updated
+bool heat_up_screen_initialized = false;   ///< Whether screen has been initialized
 
 // =============================================================================
-// Helper Function Prototypes
+// Helper Function Prototypes - See ui_helpers.c
 // =============================================================================
 
-static void init_free_press_mode(void);
-static void init_job_press_mode(void);
-static void enter_heat_up_mode(ui_state_t return_to);
+// Mode initialization and statistics helpers (defined in ui_helpers.c)
+void init_free_press_mode(void);
+void init_job_press_mode(void);
+void enter_heat_up_mode(ui_state_t return_to);
+void reset_free_press_stats(void);
+void reset_print_run_stats(void);
+void perform_job_stats_reset(void);
+void perform_all_stats_reset(void);
 
 // =============================================================================
 // State Handler Function Prototypes
@@ -1519,56 +1526,9 @@ static void handle_stats_kpis_state(ui_event_t event)
 }
 
 // =============================================================================
-// Helper Functions
+// Helper Functions - See ui_helpers.c
 // =============================================================================
-
-/**
- * @brief Initialize free press mode and reset statistics
- *
- * Sets free_press_mode flag and resets all free press session statistics.
- */
-static void init_free_press_mode(void)
-{
-    free_press_mode = true;
-    free_press_count = 0;
-    free_press_time_elapsed = 0;
-    free_press_avg_time = 0;
-    free_press_run_start_time = 0;
-    ESP_LOGI(TAG, "Free press mode initialized, statistics reset");
-}
-
-/**
- * @brief Initialize job press mode
- *
- * Clears free_press_mode flag to enable job-tracked pressing.
- */
-static void init_job_press_mode(void)
-{
-    free_press_mode = false;
-    ESP_LOGI(TAG, "Job press mode initialized");
-}
-
-/**
- * @brief Enter heat-up state with specified return destination
- *
- * @param return_to State to transition to when heat-up completes
- */
-static void enter_heat_up_mode(ui_state_t return_to)
-{
-    ui_current_state = UI_STATE_HEAT_UP;
-    heat_up_start_time = esp_timer_get_time() / 1000000;
-    heat_up_start_temp = temperature_display_celsius;
-    heat_up_heating_enabled = heating_is_active();
-    heat_up_return_state = return_to;
-
-    // Reset render state for clean display
-    heat_up_heating_was_active = false;
-    heat_up_last_update_sec = 0;
-    heat_up_screen_initialized = false;
-
-    display_needs_update = true;
-    ESP_LOGI(TAG, "Entering heat-up mode, will return to state: %d", return_to);
-}
+// Mode initialization and statistics helpers moved to ui_helpers.c
 
 // =============================================================================
 // Display Rendering Implementations
@@ -2350,57 +2310,7 @@ static void handle_reset_stats_state(ui_event_t event)
     }
 }
 
-// Helper: Reset free press statistics
-static void reset_free_press_stats(void)
-{
-    free_press_count = 0;
-    free_press_time_elapsed = 0;
-    free_press_avg_time = 0;
-    free_press_run_start_time = 0;
-}
-
-// Helper: Reset current print run statistics
-static void reset_print_run_stats(void)
-{
-    if (current_run != NULL)
-    {
-        current_run->progress = 0;
-        current_run->time_elapsed = 0;
-        current_run->shirts_completed = 0;
-        current_run->avg_time_per_shirt = 0;
-    }
-}
-
-// Helper: Perform job statistics reset
-static void perform_job_stats_reset(void)
-{
-    ESP_LOGI(TAG, "Resetting job and free press statistics");
-
-    reset_free_press_stats();
-    reset_print_run_stats();
-    save_persistent_data();
-
-    display_clear();
-    display_text(0, 1, "Job Stats Reset!");
-    display_flush();
-}
-
-// Helper: Perform all statistics reset
-static void perform_all_stats_reset(void)
-{
-    ESP_LOGI(TAG, "Wiping all statistics");
-
-    // Reset statistics via main.h function (thread-safe)
-    reset_all_statistics();
-
-    reset_free_press_stats();
-    reset_print_run_stats();
-    save_persistent_data();
-
-    display_clear();
-    display_text(0, 1, "All Stats Wiped!");
-    display_flush();
-}
+// Statistics reset helpers moved to ui_helpers.c
 
 // Helper: Render countdown confirmation screen
 static void render_reset_countdown(uint32_t elapsed_ms)
