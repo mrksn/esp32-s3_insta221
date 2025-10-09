@@ -3,6 +3,7 @@ idf_component_register(
         "main.c"
         "ui_state.c"
         "ui_helpers.c"
+        "ui_renderers.c"
         "data_model.c"
         "utils/application_state.c"
         "utils/system_config.c"
