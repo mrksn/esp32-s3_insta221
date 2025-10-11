@@ -20,6 +20,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 static const char *TAG = "ui_renderers";
 
@@ -502,6 +503,7 @@ void render_pressing_active(void)
     static uint32_t last_time_remaining = 9999;
     static cycle_status_t last_stage = IDLE;
     static bool screen_initialized = false;
+    static float last_displayed_temp = 0.0f;
 
     uint32_t current_time = esp_timer_get_time() / 1000000;  // Convert to seconds
     uint32_t stage_elapsed = current_time - stage_start_time;
@@ -549,9 +551,25 @@ void render_pressing_active(void)
         sprintf(top_line, "%s%*s", stage_text, padding + (int)strlen(shirt_buffer), shirt_buffer);
         display_text(0, 0, top_line);
 
+        // Display initial temperature on line 1
+        char temp_buffer[22];
+        sprintf(temp_buffer, "%.1fC / %.1fC", temperature_display_celsius, current_settings->target_temp);
+        display_text(0, 1, temp_buffer);
+        last_displayed_temp = temperature_display_celsius;
+
         screen_initialized = true;
         last_stage = current_stage;
         last_time_remaining = 9999; // Force update
+    }
+
+    // Update temperature if it changed by 0.5°C or more (without full redraw to avoid flicker)
+    if (current_stage != IDLE && fabsf(temperature_display_celsius - last_displayed_temp) >= 0.5f)
+    {
+        char temp_buffer[22];
+        sprintf(temp_buffer, "%.1fC / %.1fC", temperature_display_celsius, current_settings->target_temp);
+        display_text(0, 1, temp_buffer);
+        display_flush();
+        last_displayed_temp = temperature_display_celsius;
     }
 
     // Update countdown and progress bar when time changes
