@@ -350,6 +350,12 @@ void ui_update(float current_temp)
         ui_process_event(event);
         display_needs_update = true;  // Mark display for update after event
     }
+    else if (ui_current_state == UI_STATE_HEAT_UP)
+    {
+        // In heat-up mode, always process events (even UI_EVENT_NONE)
+        // to check for auto-transition when heating completes
+        ui_process_event(UI_EVENT_NONE);
+    }
 
     // Check if state changed
     if (ui_current_state != ui_previous_state)

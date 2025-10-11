@@ -555,25 +555,32 @@ void temp_control_task(void *pvParameters)
                 // Normal operation: update pressing cycle timing
                 update_pressing_cycle();
 
-                // Check if we're in Heat Up mode
+                // Check if we're in Heat Up mode or any Press-related mode
                 ui_state_t current_ui_state = ui_get_current_state();
                 bool in_heat_up_mode = (current_ui_state == UI_STATE_HEAT_UP);
+                bool in_press_workflow = (current_ui_state == UI_STATE_START_PRESSING ||
+                                         current_ui_state == UI_STATE_FREE_PRESS ||
+                                         current_ui_state == UI_STATE_PRESSING_ACTIVE ||
+                                         current_ui_state == UI_STATE_STAGE1_DONE ||
+                                         current_ui_state == UI_STATE_STAGE2_READY ||
+                                         current_ui_state == UI_STATE_STAGE2_DONE ||
+                                         current_ui_state == UI_STATE_CYCLE_COMPLETE);
 
                 // Control heating when:
-                // 1. Pressing is active, not paused, and safety checks pass, OR
-                // 2. In Heat Up mode and safety checks pass
-                if ((pressing_active && !press_safety_locked && check_system_safety() && !pause_mode) ||
-                    (in_heat_up_mode && check_system_safety()))
+                // 1. In Heat Up mode and safety checks pass, OR
+                // 2. In any Press workflow state (including active pressing) and safety checks pass and not paused
+                if ((in_heat_up_mode && check_system_safety()) ||
+                    (in_press_workflow && check_system_safety() && !pause_mode))
                 {
                     // Update PID controller with current temperature
                     float output = pid_update(current_temperature);
 
-                    ESP_LOGI(TAG, "Heat Up: PID output=%.1f%%, pressing=%d, heat_up=%d",
-                             output, pressing_active, in_heat_up_mode);
+                    ESP_LOGI(TAG, "Heating: PID output=%.1f%%, pressing=%d, heat_up=%d, press_workflow=%d",
+                             output, pressing_active, in_heat_up_mode, in_press_workflow);
 
-                    // In Heat Up mode, apply PID directly without hysteresis
-                    // During pressing, use hysteresis for stability
-                    if (in_heat_up_mode)
+                    // In Heat Up mode or Press workflow (not actively pressing), apply PID directly without hysteresis
+                    // During active pressing, use hysteresis for stability
+                    if (in_heat_up_mode || (in_press_workflow && !pressing_active))
                     {
                         heating_set_power((uint8_t)output);
                     }
@@ -584,9 +591,9 @@ void temp_control_task(void *pvParameters)
                 }
                 else
                 {
-                    // No heating when not pressing, not in heat up, paused, or when safety systems are engaged
-                    ESP_LOGD(TAG, "Heating off: pressing=%d, locked=%d, safety=%d, pause=%d, heat_up=%d",
-                             pressing_active, press_safety_locked, check_system_safety(), pause_mode, in_heat_up_mode);
+                    // No heating when not in heating modes, paused, or when safety systems are engaged
+                    ESP_LOGD(TAG, "Heating off: pressing=%d, locked=%d, safety=%d, pause=%d, heat_up=%d, press_workflow=%d",
+                             pressing_active, press_safety_locked, check_system_safety(), pause_mode, in_heat_up_mode, in_press_workflow);
                     heating_set_power(0);
                 }
             }
@@ -1225,9 +1232,9 @@ bool is_heat_press_ready(void)
         return false;
     }
 
-    // Check if current temperature is within ±5°C of target
-    float temp_lower_bound = settings.target_temp - TEMP_HYSTERESIS;
-    float temp_upper_bound = settings.target_temp + TEMP_HYSTERESIS;
+    // Check if current temperature is within ±1°C of target (tighter than hysteresis for ready state)
+    float temp_lower_bound = settings.target_temp - HEAT_UP_TEMP_READY_THRESHOLD;
+    float temp_upper_bound = settings.target_temp + HEAT_UP_TEMP_READY_THRESHOLD;
 
     if (current_temperature < temp_lower_bound || current_temperature > temp_upper_bound)
     {
@@ -1245,9 +1252,9 @@ bool is_heat_press_ready(void)
  */
 void update_led_indicators(void)
 {
-    // Green LED: Temperature is within range of target (ready for pressing)
-    bool temp_ready = (current_temperature >= (settings.target_temp - 5.0f)) &&
-                      (current_temperature <= (settings.target_temp + 5.0f)) &&
+    // Green LED: Temperature is within ±1°C of target (ready for pressing)
+    bool temp_ready = (current_temperature >= (settings.target_temp - HEAT_UP_TEMP_READY_THRESHOLD)) &&
+                      (current_temperature <= (settings.target_temp + HEAT_UP_TEMP_READY_THRESHOLD)) &&
                       !emergency_shutdown;
     controls_set_led_green(temp_ready);
 
