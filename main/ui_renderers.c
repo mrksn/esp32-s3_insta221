@@ -551,9 +551,10 @@ void render_pressing_active(void)
         sprintf(top_line, "%s%*s", stage_text, padding + (int)strlen(shirt_buffer), shirt_buffer);
         display_text(0, 0, top_line);
 
-        // Display initial temperature on line 1
+        // Display initial temperature deviation on line 1 (^ displays as Δ in custom font)
         char temp_buffer[22];
-        sprintf(temp_buffer, "%.1fC / %.1fC", temperature_display_celsius, current_settings->target_temp);
+        float deviation = temperature_display_celsius - current_settings->target_temp;
+        sprintf(temp_buffer, "^ %+.1f", deviation);  // ^ is repurposed as Δ delta symbol
         display_text(0, 1, temp_buffer);
         last_displayed_temp = temperature_display_celsius;
 
@@ -566,7 +567,8 @@ void render_pressing_active(void)
     if (current_stage != IDLE && fabsf(temperature_display_celsius - last_displayed_temp) >= 0.5f)
     {
         char temp_buffer[22];
-        sprintf(temp_buffer, "%.1fC / %.1fC", temperature_display_celsius, current_settings->target_temp);
+        float deviation = temperature_display_celsius - current_settings->target_temp;
+        sprintf(temp_buffer, "^ %+.1f", deviation);  // ^ is repurposed as Δ delta symbol
         display_text(0, 1, temp_buffer);
         display_flush();
         last_displayed_temp = temperature_display_celsius;
