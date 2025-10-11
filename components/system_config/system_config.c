@@ -57,7 +57,7 @@ const system_config_t SYSTEM_CONFIG = {
         .min_heating_rate = 0.01f,            // 0.01°C/s minimum heating rate
     },
     .simulation = {
-        .enabled = false,                     // Set to true to enable simulation mode
+        .enabled = true,                      // Set to true to enable simulation mode
     },
 };
 

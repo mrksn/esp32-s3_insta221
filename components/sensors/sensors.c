@@ -46,9 +46,10 @@ static float sim_ambient_temp = 20.0f;      ///< Ambient temperature (°C)
 static float sim_heating_power = 0.0f;      ///< Current heating power (0-100%)
 
 // Thermal model parameters
-#define SIM_THERMAL_MASS 2200.0f        ///< Thermal mass (J/°C) - represents heat capacity of the plate
+// Adjusted for fast heat-up with negligible heat loss to ensure target is reachable
+#define SIM_THERMAL_MASS 400.0f         ///< Thermal mass (J/°C) - low for fast heat-up
 #define SIM_HEATING_POWER_MAX 2200.0f   ///< Maximum heating power (W) - 2200W heating element
-#define SIM_HEAT_LOSS_COEFF 5.0f        ///< Heat loss coefficient (W/°C) - simplified for simulation demonstration
+#define SIM_HEAT_LOSS_COEFF 0.2f        ///< Heat loss coefficient (W/°C) - negligible to reach target
 #define SIM_UPDATE_INTERVAL_MS 100      ///< Simulation update interval (ms)
 
 /**
