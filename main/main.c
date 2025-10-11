@@ -39,7 +39,7 @@
 #include "ui_state.h"
 #include "main.h"
 #include "pid_autotune.h"     // NEW: Auto-tune support
-#include "system_constants.h" // System-wide constants and configuration
+#include "system_config.h"    // components/system_config/include/ - System configuration
 
 static const char *TAG = "main";
 

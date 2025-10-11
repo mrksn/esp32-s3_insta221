@@ -11,7 +11,7 @@
 #include "display_contract.h"
 #include "heating_contract.h"
 #include "controls_contract.h"
-#include "system_constants.h"
+#include "system_config.h"  // components/system_config/include/
 
 #include "esp_log.h"
 #include "esp_timer.h"

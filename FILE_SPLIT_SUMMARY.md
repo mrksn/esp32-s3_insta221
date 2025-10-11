@@ -1,7 +1,204 @@
-# UI State Machine Refactoring Summary
+# Modularization and Refactoring Summary
 
 **Date**: 2025-10-09
-**Task**: Phase 4, Task 4.3 - Split Large Files
+**Tasks**: Phase 4, Task 4.3 - Split Large Files & Task 4.4 - Extract System Config
+**Status**: ✅ COMPLETE
+
+---
+
+# Task 4.4: System Configuration Component
+
+**Date**: 2025-10-09
+**Status**: ✅ COMPLETE
+
+## Overview
+
+Successfully extracted and centralized all system configuration and constants into a dedicated `system_config` component, providing a single source of truth for all system constraints, safety limits, and parameters.
+
+## Component Structure
+
+```
+components/system_config/
+├── CMakeLists.txt              # Component build configuration
+├── README.md                   # Comprehensive documentation
+├── include/
+│   └── system_config.h         # Public API header
+└── system_config.c             # Implementation with validation
+```
+
+## Configuration Organization
+
+The configuration is organized into semantic groups using a structured `system_config_t` type:
+
+### Safety Limits
+- `max_temperature_celsius`: 220.0°C maximum safe temperature
+- `max_cycle_time_seconds`: 300s (5 minute) maximum cycle time
+- `heap_minimum_bytes`: 8KB minimum free heap
+
+### Timing Parameters
+- `ui_task_timeout_sec`: 1s UI task watchdog timeout
+- `temp_task_timeout_sec`: 3s temperature task watchdog timeout
+- `sensor_timeout_sec`: 30s maximum time without sensor reading
+- `sensor_validation_timeout_sec`: 10s sensor timeout for cycle validation
+
+### Temperature Thresholds
+- `hysteresis_celsius`: 5°C PID control hysteresis
+- `pressing_max_offset_celsius`: 20°C max offset during pressing
+- `cycle_start_max_offset_celsius`: 30°C max offset for cycle start
+- `cycle_start_min_celsius`: 20°C minimum temperature for cycle start
+- `recovery_offset_celsius`: 10°C offset for error recovery
+- `min_for_pressing_celsius`: 100°C minimum temperature to allow pressing
+- `ready_threshold_celsius`: 1°C threshold to consider heat-up complete
+
+### Sensor Configuration
+- `retry_count`: 3 sensor read retry attempts
+- `retry_delay_ms`: 500ms delay between retries
+
+### Heat-up Display
+- `min_temp_change_celsius`: 0.5°C minimum change for ETA calculation
+- `min_elapsed_time_sec`: 10s minimum time for ETA calculation
+- `min_heating_rate`: 0.01°C/s minimum heating rate
+
+### Simulation Mode
+- `enabled`: false (disable simulation by default)
+
+## New Features
+
+### 1. Configuration Validation
+```c
+bool system_config_validate(void);
+const char* system_config_get_error(void);
+```
+- Validates all configuration values at startup
+- Checks ranges and logical constraints
+- Returns detailed error messages
+
+### 2. Configuration Printing
+```c
+void system_config_print(void);
+```
+- Outputs all configuration to ESP log
+- Useful for debugging and verification
+
+### 3. Type-Safe Access
+```c
+// Structured access
+float max_temp = SYSTEM_CONFIG.safety.max_temperature_celsius;
+uint32_t timeout = SYSTEM_CONFIG.timing.sensor_timeout_sec;
+```
+
+### 4. Legacy Compatibility
+```c
+// Backward compatible macros
+#define MAX_TEMPERATURE (SYSTEM_CONFIG.safety.max_temperature_celsius)
+#define SENSOR_TIMEOUT_SEC (SYSTEM_CONFIG.timing.sensor_timeout_sec)
+```
+
+## Migration Changes
+
+### Files Updated
+
+#### Component CMakeLists.txt
+1. **main/CMakeLists.txt**
+   - Removed: `"utils/system_config.c"` from SRCS
+   - Added: `system_config` to REQUIRES
+
+2. **components/heating/CMakeLists.txt**
+   - Removed: `"../../main/utils"` from INCLUDE_DIRS
+   - Added: `system_config` to REQUIRES
+
+3. **components/sensors/CMakeLists.txt**
+   - Removed: `"../../main/utils"` from INCLUDE_DIRS
+   - Added: `system_config` to REQUIRES
+
+#### Source Files
+1. **main/main.c**
+   - Changed: `#include "system_constants.h"` → `#include "system_config.h"`
+
+2. **main/ui_state.c**
+   - Removed: `#include "system_constants.h"`
+   - Changed: `#include "system_config.h"` with proper comment
+
+3. **main/ui_renderers.c**
+   - Changed: `#include "system_constants.h"` → `#include "system_config.h"`
+
+### Files Removed (Old)
+- `main/include/system_constants.h` - Replaced by component
+- `main/utils/system_config.h` - Moved to component
+- `main/utils/system_config.c` - Moved to component
+
+## Benefits
+
+### 1. Centralization
+✅ Single source of truth for all system parameters
+✅ No scattered constants across multiple files
+✅ Easier to locate and modify configuration
+
+### 2. Type Safety
+✅ Structured configuration with semantic grouping
+✅ Compile-time type checking
+✅ IDE autocomplete support
+
+### 3. Validation
+✅ Runtime validation of configuration values
+✅ Detailed error messages for invalid configurations
+✅ Prevents misconfiguration issues
+
+### 4. Modularity
+✅ Independent component with clear dependencies
+✅ Reusable across different projects
+✅ No circular dependencies
+
+### 5. Documentation
+✅ Comprehensive README.md in component
+✅ Inline documentation for all parameters
+✅ Usage examples and migration guide
+
+### 6. Maintainability
+✅ Easy to add new configuration parameters
+✅ Structured organization aids understanding
+✅ Clear separation from application logic
+
+## Testing Considerations
+
+Configuration should be validated at system startup:
+
+```c
+void app_main(void) {
+    // Validate configuration
+    if (!system_config_validate()) {
+        ESP_LOGE(TAG, "Invalid configuration: %s",
+                 system_config_get_error());
+        emergency_shutdown_system("Configuration validation failed");
+        return;
+    }
+
+    // Print configuration for debugging
+    system_config_print();
+
+    // Continue with initialization...
+}
+```
+
+## Build Verification
+
+✅ **No linker errors**: All symbols properly resolved
+✅ **No missing definitions**: Configuration accessible from all components
+✅ **Clean component dependencies**: Proper component requires structure
+✅ **Backward compatibility**: Legacy macros work correctly
+
+## Safety Notes
+
+⚠️ **SAFETY CRITICAL**: Configuration values directly affect system safety
+⚠️ Review all changes to safety limits and temperature thresholds carefully
+⚠️ Test thoroughly after any configuration modifications
+⚠️ Document the rationale for any safety parameter changes
+
+---
+
+# Task 4.3: UI State Machine Refactoring
+
+**Date**: 2025-10-09
 **Status**: ✅ COMPLETE
 
 ## Overview

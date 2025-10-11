@@ -21,8 +21,7 @@
 #include "display_contract.h"     // components/display/include/
 #include "heating_contract.h"     // components/heating/include/
 #include "data_model.h"           // components/storage/include/
-#include "system_config.h"
-#include "system_constants.h"     // System-wide constants
+#include "system_config.h"        // components/system_config/include/
 #include "main.h"                 // For is_heat_press_ready()
 
 static const char *TAG = "ui_state";

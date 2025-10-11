@@ -6,7 +6,6 @@ idf_component_register(
         "ui_renderers.c"
         "data_model.c"
         "utils/application_state.c"
-        "utils/system_config.c"
         "pid/pid_controller.c"
         "pid/pid_autotune.c"
     INCLUDE_DIRS
@@ -21,4 +20,5 @@ idf_component_register(
         controls
         heating
         storage
+        system_config
 )
