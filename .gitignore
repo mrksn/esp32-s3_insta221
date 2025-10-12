@@ -1,3 +1,6 @@
+# Spec Kit
+.specify
+
 # ESP-IDF build artifacts
 build/
 sdkconfig.old
@@ -13,6 +16,7 @@ release-*/
 *.tmp
 *.swp
 *.bak
+*.backup
 
 # OS files
 .DS_Store
