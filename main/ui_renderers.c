@@ -25,6 +25,19 @@
 static const char *TAG = "ui_renderers";
 
 // =============================================================================
+// Helper Functions
+// =============================================================================
+
+/**
+ * @brief Display an empty line for spacing
+ * @param line Line number (0-7 for 64px display)
+ */
+static inline void display_empty_line(uint8_t line)
+{
+    display_text(0, line, "");
+}
+
+// =============================================================================
 // Constants for array sizes
 // =============================================================================
 
@@ -1034,37 +1047,73 @@ void render_stage2_done(void)
 void render_cycle_complete(void)
 {
     extern print_run_t print_run;
+    extern uint32_t run_start_time;  // Job mode run start time (from main.c)
     char buffer[32];
 
     display_clear();
     display_invert(false);
 
+    uint32_t current_time = esp_timer_get_time() / 1000000;
+    uint32_t total_elapsed = 0;
+    uint32_t total_pressing_time = 0;
+    uint32_t shirt_count = 0;
+
     if (free_press_mode)
     {
-        display_text(0, 0, "Press Complete!");
-        sprintf(buffer, "Count: %d", free_press_count);
-        display_text(0, 1, buffer);
-        if (free_press_avg_time > 0)
+        // Free press statistics
+        shirt_count = free_press_count;
+        uint32_t run_start = ui_get_free_press_run_start_time();
+        if (run_start > 0)
         {
-            sprintf(buffer, "Avg: %lu s", free_press_avg_time);
-            display_text(0, 2, buffer);
+            total_elapsed = current_time - run_start;
         }
+        total_pressing_time = shirt_count * (current_settings->stage1_default + current_settings->stage2_default);
     }
     else
     {
-        display_text(0, 0, "Cycle Complete!");
-        sprintf(buffer, "Done: %d / %d",
-                print_run.shirts_completed,
-                print_run.num_shirts);
-        display_text(0, 1, buffer);
-        if (print_run.avg_time_per_shirt > 0)
+        // Job mode statistics
+        shirt_count = print_run.shirts_completed;
+        if (run_start_time > 0)
         {
-            sprintf(buffer, "Avg: %lu s", print_run.avg_time_per_shirt);
-            display_text(0, 2, buffer);
+            total_elapsed = current_time - run_start_time;
         }
+        total_pressing_time = shirt_count * (current_settings->stage1_default + current_settings->stage2_default);
     }
 
-    display_text(0, 3, "Close for next");
+    // Line 0: Shirt count
+    snprintf(buffer, sizeof(buffer), "Shirts:     %3lu", (unsigned long)shirt_count);
+    display_text(0, 0, buffer);
+
+    display_empty_line(1);
+
+    // Line 2: Average time per shirt
+    if (shirt_count > 0)
+    {
+        uint32_t avg_time = total_elapsed / shirt_count;
+        uint32_t avg_min = avg_time / 60;
+        uint32_t avg_sec = avg_time % 60;
+        snprintf(buffer, sizeof(buffer), "Avg/shirt: %2lum%02lus", (unsigned long)avg_min, (unsigned long)avg_sec);
+        display_text(0, 2, buffer);
+
+        display_empty_line(3);
+
+        // Line 4: Average idle time per shirt
+        uint32_t total_idle = (total_elapsed > total_pressing_time) ? (total_elapsed - total_pressing_time) : 0;
+        uint32_t avg_idle = total_idle / shirt_count;
+        uint32_t idle_min = avg_idle / 60;
+        uint32_t idle_sec = avg_idle % 60;
+        snprintf(buffer, sizeof(buffer), "Avg idle:  %2lum%02lus", (unsigned long)idle_min, (unsigned long)idle_sec);
+        display_text(0, 4, buffer);
+    }
+
+    display_empty_line(5);
+
+    // Line 6: Total elapsed time
+    uint32_t total_min = total_elapsed / 60;
+    uint32_t total_sec = total_elapsed % 60;
+    snprintf(buffer, sizeof(buffer), "Total:     %2lum%02lus", (unsigned long)total_min, (unsigned long)total_sec);
+    display_text(0, 6, buffer);
+
     display_flush();
 }
 
