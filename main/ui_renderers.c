@@ -530,32 +530,16 @@ void render_pressing_active(void)
             return;  // Don't show countdown when waiting
         }
 
-        // Build complete top line with stage and shirt number
-        char top_line[22];  // 21 chars + null terminator
-        char shirt_buffer[10];
+        // Build complete top line with stage, deviation, and shirt number (right-aligned)
+        char top_line[32];  // Sufficient for formatted output
 
-        if (free_press_mode)
-        {
-            sprintf(shirt_buffer, "# %d", free_press_count + 1);
-        }
-        else
-        {
-            sprintf(shirt_buffer, "# %d", current_cycle.shirt_id);
-        }
-
-        // Format: "Stage 1         # 125" (stage left-aligned, shirt number right-aligned)
         const char *stage_text = (current_stage == STAGE1) ? "Stage 1" : "Stage 2";
-        int padding = 21 - strlen(stage_text) - strlen(shirt_buffer);
-        if (padding < 1) padding = 1;
-
-        sprintf(top_line, "%s%*s", stage_text, padding + (int)strlen(shirt_buffer), shirt_buffer);
-        display_text(0, 0, top_line);
-
-        // Display initial temperature deviation on line 1 (^ displays as Δ in custom font)
-        char temp_buffer[22];
         float deviation = temperature_display_celsius - current_settings->target_temp;
-        sprintf(temp_buffer, "^ %+.1f", deviation);  // ^ is repurposed as Δ delta symbol
-        display_text(0, 1, temp_buffer);
+        int shirt_num = free_press_mode ? (free_press_count + 1) : current_cycle.shirt_id;
+
+        // Format: "Stage 1 +0.5    # 125" (stage left, deviation, shirt right-aligned with 3 digits)
+        snprintf(top_line, sizeof(top_line), "%-7s %+5.1f  #%3d", stage_text, deviation, shirt_num);
+        display_text(0, 0, top_line);
         last_displayed_temp = temperature_display_celsius;
 
         screen_initialized = true;
@@ -566,10 +550,16 @@ void render_pressing_active(void)
     // Update temperature if it changed by 0.5°C or more (without full redraw to avoid flicker)
     if (current_stage != IDLE && fabsf(temperature_display_celsius - last_displayed_temp) >= 0.5f)
     {
-        char temp_buffer[22];
+        // Rebuild top line with updated deviation
+        char top_line[32];  // Sufficient for formatted output
+
+        const char *stage_text = (current_stage == STAGE1) ? "Stage 1" : "Stage 2";
         float deviation = temperature_display_celsius - current_settings->target_temp;
-        sprintf(temp_buffer, "^ %+.1f", deviation);  // ^ is repurposed as Δ delta symbol
-        display_text(0, 1, temp_buffer);
+        int shirt_num = free_press_mode ? (free_press_count + 1) : current_cycle.shirt_id;
+
+        // Format: "Stage 1 +0.5    # 125" (stage left, deviation, shirt right-aligned with 3 digits)
+        snprintf(top_line, sizeof(top_line), "%-7s %+5.1f  #%3d", stage_text, deviation, shirt_num);
+        display_text(0, 0, top_line);
         display_flush();
         last_displayed_temp = temperature_display_celsius;
     }
