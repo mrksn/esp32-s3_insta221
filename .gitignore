@@ -1,0 +1,22 @@
+# ESP-IDF build artifacts
+build/
+sdkconfig.old
+
+# Release artifacts
+release-*/
+*.tar.gz
+
+# VS Code
+.vscode/
+
+# Temporary files
+*.tmp
+*.swp
+*.bak
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# ESP-IDF tools
+managed_components/

@@ -474,32 +474,88 @@ void render_pid_adjust(void)
 
 void render_start_pressing(void)
 {
+    static float last_displayed_temp = 0.0f;
+    static bool last_ready_state = false;
     char buffer[32];
 
-    display_clear();
-    display_text(0, 0, "Ready to Press");
-    sprintf(buffer, "Temp: %.1f/%.1f C",
-            temperature_display_celsius,
-            current_settings->target_temp);
-    display_text(0, 1, buffer);
-    display_text(0, 2, "Close press to start");
-    display_flush();
+    bool current_ready_state = is_heat_press_ready();
+    bool needs_full_redraw = (fabsf(temperature_display_celsius - last_displayed_temp) >= 0.5f) ||
+                              (current_ready_state != last_ready_state);
+
+    if (needs_full_redraw)
+    {
+        display_clear();
+
+        // Line 0: press mode
+        display_text(0, 0, "Press Mode: Job");
+
+        // Line 1: empty
+        display_empty_line(1);
+
+        // Line 2: current temperature / target temp
+        sprintf(buffer, "%.1f / %.1fC",
+                temperature_display_celsius,
+                current_settings->target_temp);
+        display_text(0, 2, buffer);
+
+        // Line 3: empty
+        display_empty_line(3);
+
+        // Print "READY" in larger letters only if heat press is ready
+        // Display is 128px wide, "READY" at 4x scale is ~100px wide, so center at (128-100)/2 = 14
+        if (current_ready_state)
+        {
+            display_large_text(14, 32, "READY");
+        }
+
+        display_flush();
+
+        last_displayed_temp = temperature_display_celsius;
+        last_ready_state = current_ready_state;
+    }
 }
 
 void render_free_press(void)
 {
+    static float last_displayed_temp = 0.0f;
+    static bool last_ready_state = false;
     char buffer[32];
 
-    display_clear();
-    display_text(0, 0, "Free Press Mode");
-    sprintf(buffer, "Temp: %.1f/%.1f C",
-            temperature_display_celsius,
-            current_settings->target_temp);
-    display_text(0, 1, buffer);
-    sprintf(buffer, "Pressed: %d", free_press_count);
-    display_text(0, 2, buffer);
-    display_text(0, 3, "Close press to start");
-    display_flush();
+    bool current_ready_state = is_heat_press_ready();
+    bool needs_full_redraw = (fabsf(temperature_display_celsius - last_displayed_temp) >= 0.5f) ||
+                              (current_ready_state != last_ready_state);
+
+    if (needs_full_redraw)
+    {
+        display_clear();
+
+        // Line 0: press mode
+        display_text(0, 0, "Press Mode: Free");
+
+        // Line 1: empty
+        display_empty_line(1);
+
+        // Line 2: current temperature / target temp
+        sprintf(buffer, "%.1f / %.1fC",
+                temperature_display_celsius,
+                current_settings->target_temp);
+        display_text(0, 2, buffer);
+
+        // Line 3: empty
+        display_empty_line(3);
+
+        // Print "READY" in larger letters only if heat press is ready
+        // Display is 128px wide, "READY" at 4x scale is ~100px wide, so center at (128-100)/2 = 14
+        if (current_ready_state)
+        {
+            display_large_text(14, 32, "READY");
+        }
+
+        display_flush();
+
+        last_displayed_temp = temperature_display_celsius;
+        last_ready_state = current_ready_state;
+    }
 }
 
 void render_profiles_menu(void)
@@ -1163,10 +1219,10 @@ void handle_heat_up_state(ui_event_t event)
 
 void render_heat_up(void)
 {
+    static float last_displayed_temp = 0.0f;
+    static bool last_ready_state = false;
     char buffer[32];
     bool heating_active = heating_is_active();
-    uint32_t current_time = esp_timer_get_time() / 1000000;
-    uint32_t elapsed_sec = current_time - heat_up_start_time;
 
     // Check if heating is enabled
     if (!heating_active)
@@ -1182,72 +1238,48 @@ void render_heat_up(void)
             display_flush();
             heat_up_heating_was_active = false;
             heat_up_screen_initialized = true;
+            last_displayed_temp = 0.0f;
+            last_ready_state = false;
         }
         return;
     }
 
-    // Full redraw only when heating state changes or entering for first time
-    if (heating_active != heat_up_heating_was_active || !heat_up_screen_initialized)
+    bool current_ready_state = is_heat_press_ready();
+    bool needs_redraw = (heating_active != heat_up_heating_was_active) ||
+                        (!heat_up_screen_initialized) ||
+                        (fabsf(temperature_display_celsius - last_displayed_temp) >= 0.5f) ||
+                        (current_ready_state != last_ready_state);
+
+    if (needs_redraw)
     {
         display_clear();
-        display_text(0, 0, "Heating Up...");
-        display_flush();
-        heat_up_screen_initialized = true;
-        heat_up_heating_was_active = true;
-        heat_up_last_update_sec = 0; // Reset to force immediate update
-    }
 
-    // Partial update when second changes (only redraw changing values)
-    if (elapsed_sec != heat_up_last_update_sec)
-    {
-        // Show current / target temp
+        // Line 0: "Heating up"
+        display_text(0, 0, "Heating up");
+
+        // Line 1: empty
+        display_empty_line(1);
+
+        // Line 2: current temperature / target temp
         sprintf(buffer, "%.1f / %.1fC",
                 temperature_display_celsius,
                 current_settings->target_temp);
-        display_text(0, 1, buffer);
-
-        // Show elapsed time
-        uint32_t elapsed_min = elapsed_sec / 60;
-        uint32_t elapsed_sec_remainder = elapsed_sec % 60;
-        sprintf(buffer, "Time: %lum %lus", elapsed_min, elapsed_sec_remainder);
         display_text(0, 2, buffer);
 
-        // Calculate ETA based on heating rate
-        float temp_diff = temperature_display_celsius - heat_up_start_temp;
-        float temp_remaining = current_settings->target_temp - temperature_display_celsius;
+        // Line 3: empty
+        display_empty_line(3);
 
-        if (temp_diff > HEAT_UP_MIN_TEMP_CHANGE && elapsed_sec > HEAT_UP_MIN_ELAPSED_TIME)
+        // Print "READY" in larger letters only if heat press is ready
+        // Display is 128px wide, "READY" at 4x scale is ~100px wide, so center at (128-100)/2 = 14
+        if (current_ready_state)
         {
-            // Calculate heating rate (degrees per second)
-            float heating_rate = temp_diff / elapsed_sec;
-
-            if (heating_rate > HEAT_UP_MIN_HEATING_RATE)
-            {
-                uint32_t eta_sec = (uint32_t)(temp_remaining / heating_rate);
-                uint32_t eta_min = eta_sec / 60;
-                uint32_t eta_sec_remainder = eta_sec % 60;
-
-                if (temp_remaining > HEAT_UP_TEMP_READY_THRESHOLD)
-                {
-                    sprintf(buffer, "ETA: %lum %lus       ", eta_min, eta_sec_remainder);
-                }
-                else
-                {
-                    sprintf(buffer, "ETA: Ready!         ");
-                }
-                display_text(0, 3, buffer);
-            }
-            else
-            {
-                display_text(0, 3, "ETA: Calculating... ");
-            }
-        }
-        else
-        {
-            display_text(0, 3, "ETA: Calculating... ");
+            display_large_text(14, 32, "READY");
         }
 
         display_flush();
-        heat_up_last_update_sec = elapsed_sec;
+        heat_up_screen_initialized = true;
+        heat_up_heating_was_active = true;
+        last_displayed_temp = temperature_display_celsius;
+        last_ready_state = current_ready_state;
     }
 }
