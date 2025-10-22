@@ -42,6 +42,8 @@
 #include "system_config.h"    // components/system_config/include/ - System configuration
 #include "config_profiles.h"  // components/system_config/include/ - Material profiles
 #include "config_display.h"   // components/system_config/include/ - Display configuration
+#include "temp_control.h"     // Temperature control helper functions
+#include "watchdog_helpers.h" // Watchdog helper functions
 
 static const char *TAG = "main";
 
@@ -84,10 +86,10 @@ static TaskHandle_t ui_task_handle;           ///< UI task handle
 static TaskHandle_t temp_control_task_handle; ///< Temperature control task handle
 static TaskHandle_t watchdog_task_handle;     ///< Watchdog task handle
 
-// Task monitoring and health
-static uint32_t ui_task_last_run = 0;           ///< Last execution time of UI task
-static uint32_t temp_control_task_last_run = 0; ///< Last execution time of temp control task
-bool system_healthy = true;                     ///< Overall system health status
+// Task monitoring and health (extern in watchdog_helpers.c)
+uint32_t ui_task_last_run = 0;           ///< Last execution time of UI task
+uint32_t temp_control_task_last_run = 0; ///< Last execution time of temp control task
+bool system_healthy = true;              ///< Overall system health status
 
 // UI state tracking (moved from ui_task for testability)
 static bool last_press_state = false;   ///< Previous reed switch state
@@ -96,11 +98,11 @@ bool pause_mode = false;                ///< System pause mode flag (extern in m
 static uint32_t state_transition_time = 0; ///< Time when UI state transitioned (for timed messages)
 
 // Auto-tune state (NEW)
-static autotune_context_t g_autotune_ctx;  ///< Auto-tune context
-static bool is_autotuning = false;         ///< Auto-tune in progress flag
+autotune_context_t g_autotune_ctx;  ///< Auto-tune context (extern in temp_control.c)
+bool is_autotuning = false;         ///< Auto-tune in progress flag (extern in temp_control.c)
 
 // Thread safety - Mutexes for shared data
-static SemaphoreHandle_t statistics_mutex = NULL;  ///< Mutex for statistics access
+SemaphoreHandle_t statistics_mutex = NULL;  ///< Mutex for statistics access (extern in temp_control.c)
 
 // =============================================================================
 // Function Prototypes
@@ -488,120 +490,27 @@ void temp_control_task(void *pvParameters)
         float new_temperature;
         if (read_temperature_safe(&new_temperature))
         {
-            current_temperature = new_temperature;
-            last_temp_reading = esp_timer_get_time() / 1000000;
-            sensor_error_count = 0; // Reset error count on successful read
-
-            // Log temperature to console
-            ESP_LOGI(TAG, "Temperature: %.2f°C", current_temperature);
+            // Handle successful sensor read
+            handle_sensor_success(new_temperature);
 
             // Check if auto-tuning is in progress
             if (is_autotuning)
             {
-                // Run auto-tune update
-                float autotune_output = pid_autotune_update(&g_autotune_ctx, current_temperature);
-
-                // Check if auto-tune is complete
-                if (pid_autotune_is_complete(&g_autotune_ctx))
+                // Handle auto-tune update and check if complete
+                if (!handle_autotune_update())
                 {
-                    autotune_result_t result;
-                    if (pid_autotune_get_result(&g_autotune_ctx, &result))
-                    {
-                        // Apply new PID parameters
-                        settings.pid_kp = result.kp;
-                        settings.pid_ki = result.ki;
-                        settings.pid_kd = result.kd;
-
-                        // Update PID controller with new parameters
-                        pid_config_t new_pid_config = {
-                            .kp = result.kp,
-                            .ki = result.ki,
-                            .kd = result.kd,
-                            .setpoint = settings.target_temp,
-                            .output_min = 0.0f,
-                            .output_max = 100.0f
-                        };
-                        pid_init(new_pid_config);
-
-                        // Save new settings
-                        save_persistent_data();
-
-                        ESP_LOGI(TAG, "Auto-tune complete! New PID parameters:");
-                        ESP_LOGI(TAG, "  Kp = %.3f", result.kp);
-                        ESP_LOGI(TAG, "  Ki = %.3f", result.ki);
-                        ESP_LOGI(TAG, "  Kd = %.3f", result.kd);
-                        ESP_LOGI(TAG, "  Ultimate Gain (Ku) = %.3f", result.ultimate_gain);
-                        ESP_LOGI(TAG, "  Ultimate Period (Tu) = %.1f seconds", result.ultimate_period);
-
-                        is_autotuning = false;
-                        heating_set_power(0);  // Turn off heating
-
-                        // Transition UI to results screen
-                        ui_set_state(UI_STATE_AUTOTUNE_COMPLETE);
-                    }
-                    else
-                    {
-                        ESP_LOGE(TAG, "Auto-tune failed to produce valid results");
-                        is_autotuning = false;
-                        heating_set_power(0);
-                    }
-                }
-                else
-                {
-                    // Apply auto-tune output (relay feedback)
-                    heating_set_power((uint8_t)autotune_output);
+                    // Auto-tune completed or failed
+                    is_autotuning = false;
                 }
             }
             else
             {
-                // Normal operation: update pressing cycle timing
-                update_pressing_cycle();
-
-                // Check if we're in Heat Up mode or any Press-related mode
-                ui_state_t current_ui_state = ui_get_current_state();
-                bool in_heat_up_mode = (current_ui_state == UI_STATE_HEAT_UP);
-                bool in_press_workflow = (current_ui_state == UI_STATE_START_PRESSING ||
-                                         current_ui_state == UI_STATE_FREE_PRESS ||
-                                         current_ui_state == UI_STATE_PRESSING_ACTIVE ||
-                                         current_ui_state == UI_STATE_STAGE1_DONE ||
-                                         current_ui_state == UI_STATE_STAGE2_READY ||
-                                         current_ui_state == UI_STATE_STAGE2_DONE ||
-                                         current_ui_state == UI_STATE_CYCLE_COMPLETE);
-
-                // Control heating when:
-                // 1. In Heat Up mode and safety checks pass, OR
-                // 2. In any Press workflow state (including active pressing) and safety checks pass and not paused
-                if ((in_heat_up_mode && check_system_safety()) ||
-                    (in_press_workflow && check_system_safety() && !pause_mode))
-                {
-                    // Update PID controller with current temperature
-                    float output = pid_update(current_temperature);
-
-                    ESP_LOGI(TAG, "Heating: PID output=%.1f%%, pressing=%d, heat_up=%d, press_workflow=%d",
-                             output, pressing_active, in_heat_up_mode, in_press_workflow);
-
-                    // In Heat Up mode or Press workflow (not actively pressing), apply PID directly without hysteresis
-                    // During active pressing, use hysteresis for stability
-                    if (in_heat_up_mode || (in_press_workflow && !pressing_active))
-                    {
-                        heating_set_power((uint8_t)output);
-                    }
-                    else
-                    {
-                        control_heating_with_hysteresis(output);
-                    }
-                }
-                else
-                {
-                    // No heating when not in heating modes, paused, or when safety systems are engaged
-                    ESP_LOGD(TAG, "Heating off: pressing=%d, locked=%d, safety=%d, pause=%d, heat_up=%d, press_workflow=%d",
-                             pressing_active, press_safety_locked, check_system_safety(), pause_mode, in_heat_up_mode, in_press_workflow);
-                    heating_set_power(0);
-                }
+                // Normal operation: PID-based temperature control
+                handle_normal_temp_control();
             }
 
             // Critical safety check: emergency shutdown if temperature exceeds limit
-            if (current_temperature > MAX_TEMPERATURE)
+            if (!validate_temperature_safety())
             {
                 emergency_shutdown_system("Temperature exceeded maximum safe limit");
 
@@ -615,25 +524,8 @@ void temp_control_task(void *pvParameters)
         }
         else
         {
-            // Sensor read failed - implement retry and escalation strategy
-            sensor_error_count++;
-            stats_lock();
-            statistics.sensor_failures++;
-            stats_unlock();
-            ESP_LOGW(TAG, "Temperature sensor read failed (attempt %d/%d)",
-                     sensor_error_count, SENSOR_RETRY_COUNT);
-
-            // Emergency shutdown after maximum retry attempts
-            if (sensor_error_count >= SENSOR_RETRY_COUNT)
-            {
-                emergency_shutdown_system("Temperature sensor failure - too many consecutive errors");
-            }
-            else
-            {
-                // Use last valid temperature for control during sensor errors
-                current_temperature = last_valid_temperature;
-                heating_set_power(0); // Safety: turn off heating during sensor errors
-            }
+            // Sensor read failed - handle with retry and escalation
+            handle_sensor_failure();
         }
 
         vTaskDelay(xDelay);
@@ -956,69 +848,30 @@ void complete_pressing_cycle(void)
 
 void watchdog_task(void *pvParameters)
 {
+    (void)pvParameters; // Suppress unused parameter warning
+
     const TickType_t xDelay = pdMS_TO_TICKS(5000); // 5 second intervals
 
     while (1)
     {
         uint32_t current_time = esp_timer_get_time() / 1000000;
 
-        // Check if UI task is still running (should update every 100ms)
-        if ((current_time - ui_task_last_run) > UI_TASK_TIMEOUT_SEC)
-        {
-            ESP_LOGE(TAG, "UI task appears unresponsive!");
-            system_healthy = false;
-        }
+        // Check task health
+        check_ui_task_health(current_time);
+        check_temp_control_task_health(current_time);
 
-        // Check if temperature control task is still running (should update every 1s)
-        if ((current_time - temp_control_task_last_run) > TEMP_TASK_TIMEOUT_SEC)
-        {
-            ESP_LOGE(TAG, "Temperature control task appears unresponsive!");
-            system_healthy = false;
-            emergency_shutdown_system("Temperature control task failure");
-        }
-
-        // Check heap memory (critical for embedded systems)
+        // Check memory health
         uint32_t free_heap = esp_get_free_heap_size();
-        if (free_heap < HEAP_MINIMUM)
-        {
-            ESP_LOGE(TAG, "Critical heap memory low: %d bytes free (minimum: %d)", free_heap, HEAP_MINIMUM);
-            emergency_shutdown_system("Critical memory shortage detected");
-        }
-        else if (free_heap < (HEAP_MINIMUM * 2))
-        {
-            ESP_LOGW(TAG, "Low heap memory warning: %d bytes free", free_heap);
-        }
+        check_memory_health();
 
-        // Check for prolonged sensor read failures
-        if ((current_time - last_temp_reading) > SENSOR_TIMEOUT_SEC)
-        {
-            ESP_LOGE(TAG, "No valid temperature reading for %d+ seconds", SENSOR_TIMEOUT_SEC);
-            emergency_shutdown_system("Temperature sensor communication lost");
-        }
+        // Check sensor health
+        check_sensor_health(current_time);
 
-        // Check system health and attempt recovery if possible
-        if (!system_healthy && !emergency_shutdown)
-        {
-            ESP_LOGW(TAG, "System health compromised - attempting recovery");
-
-            // Try to reset error state if conditions are safe
-            if (current_temperature < (settings.target_temp - TEMP_RECOVERY_OFFSET) && !pressing_active)
-            {
-                ESP_LOGI(TAG, "Safe conditions detected - attempting error recovery");
-                reset_error_state();
-            }
-        }
+        // Attempt system recovery if needed
+        attempt_system_recovery();
 
         // Log system health status
-        if (system_healthy && !emergency_shutdown)
-        {
-            ESP_LOGD(TAG, "System health check passed - heap: %d bytes, temp: %.1f°C",
-                     free_heap, current_temperature);
-        }
-        else
-        {
-            ESP_LOGE(TAG, "System health check failed - emergency shutdown active");
-        }
+        log_system_health_status(free_heap);
 
         vTaskDelay(xDelay);
     }

@@ -1,6 +1,8 @@
 idf_component_register(
     SRCS
         "main.c"
+        "temp_control.c"
+        "watchdog_helpers.c"
         "ui_state.c"
         "ui_helpers.c"
         "ui_renderers.c"
