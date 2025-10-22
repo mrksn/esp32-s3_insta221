@@ -12,6 +12,8 @@
 #include "heating_contract.h"
 #include "controls_contract.h"
 #include "system_config.h"  // components/system_config/include/
+#include "config_profiles.h"  // components/system_config/include/
+#include "config_display.h"   // components/system_config/include/
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -38,12 +40,12 @@ static inline void display_empty_line(uint8_t line)
 }
 
 // =============================================================================
-// Constants for array sizes
+// Constants for array sizes (from config_display.h and config_profiles.h)
 // =============================================================================
 
 #define JOB_SETUP_ITEM_COUNT 2
 #define JOB_ITEM_NUM_SHIRTS 0
-#define PROFILE_COUNT 5  // Cotton, Polyester, Blockout, Wood, Metal
+// PROFILE_COUNT is now defined in config_profiles.h
 
 // =============================================================================
 // External State Variables (defined in ui_state.c)
@@ -130,13 +132,13 @@ void render_startup(void)
     display_clear();
 
     // Display "DIN" in large text, centered
-    display_large_text(28, 8, "DIN");
+    display_large_text(DISPLAY_LOGO_X, DISPLAY_LOGO_Y, "DIN");
 
     // Display "fabrik" in normal text below, centered
-    display_text(0, 4, "      fabrik");
+    display_text(DISPLAY_COL_LEFT, DISPLAY_LINE_4, "      fabrik");
 
     // Display "initialising..." at bottom (line 7 - last line for 64px display)
-    display_text(0, 7, "  initialising...");
+    display_text(DISPLAY_COL_LEFT, DISPLAY_LINE_7, "  initialising...");
 
     display_flush();
 }
@@ -1005,7 +1007,7 @@ void render_reset_countdown(uint32_t elapsed_ms)
             display_clear();
             display_text(0, 0, "Wiping in:");
             sprintf(buffer, "%lu", countdown_sec);
-            display_large_text(52, 20, buffer);
+            display_large_text(52, DISPLAY_LARGE_TEXT_Y_CENTER + 4, buffer);
             display_flush();
             last_countdown_sec = countdown_sec;
         }
@@ -1080,7 +1082,7 @@ void render_stage1_done(void)
 {
     display_clear();
     display_invert(true);
-    display_large_text(20, 16, "DONE");
+    display_large_text(DISPLAY_LARGE_TEXT_X_CENTER, DISPLAY_LARGE_TEXT_Y_CENTER, STATUS_DONE);
     display_flush();
 }
 
@@ -1096,7 +1098,7 @@ void render_stage2_done(void)
 {
     display_clear();
     display_invert(true);
-    display_large_text(20, 16, "DONE");
+    display_large_text(DISPLAY_LARGE_TEXT_X_CENTER, DISPLAY_LARGE_TEXT_Y_CENTER, STATUS_DONE);
     display_flush();
 }
 

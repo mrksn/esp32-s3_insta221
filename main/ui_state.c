@@ -22,6 +22,8 @@
 #include "heating_contract.h"     // components/heating/include/
 #include "data_model.h"           // components/storage/include/
 #include "system_config.h"        // components/system_config/include/
+#include "config_profiles.h"      // components/system_config/include/
+#include "config_display.h"       // components/system_config/include/
 #include "main.h"                 // For is_heat_press_ready()
 
 static const char *TAG = "ui_state";
@@ -126,15 +128,7 @@ printing_type_t job_setup_staged_print_type = SINGLE_SIDED;
 int print_type_selected_index = 0;
 
 // Profile selection state
-typedef enum {
-    PROFILE_COTTON,
-    PROFILE_POLYESTER,
-    PROFILE_BLOCKOUT,
-    PROFILE_WOOD,
-    PROFILE_METAL,
-    PROFILE_COUNT
-} profile_type_t;
-
+// Note: profile_type_t is now material_profile_type_t from config_profiles.h
 int profile_selected_index = 0;  // non-static - shared with ui_renderers.c
 
 // Statistics submenu state (non-static - shared with ui_renderers.c)
@@ -1350,36 +1344,35 @@ static void handle_profiles_menu_state(ui_event_t event)
 
     case UI_EVENT_ROTARY_PUSH:
         // Apply selected profile settings
-        switch (profile_selected_index)
+        if (profile_selected_index >= 0 && profile_selected_index < PROFILE_COUNT)
         {
-        case PROFILE_COTTON:
-            current_settings->target_temp = 140.0f;
-            current_settings->stage1_default = 15;
-            current_settings->stage2_default = 5;
-            break;
-        case PROFILE_POLYESTER:
-            current_settings->target_temp = 125.0f;
-            current_settings->stage1_default = 12;
-            current_settings->stage2_default = 5;
-            break;
-        case PROFILE_BLOCKOUT:
-            current_settings->target_temp = 125.0f;
-            current_settings->stage1_default = 12;
-            current_settings->stage2_default = 5;
-            break;
-        case PROFILE_WOOD:
-            current_settings->target_temp = 170.0f;
-            current_settings->stage1_default = 20;
-            current_settings->stage2_default = 5;
-            break;
-        case PROFILE_METAL:
-            current_settings->target_temp = 204.0f;
-            current_settings->stage1_default = 80;
-            current_settings->stage2_default = 5;
-            break;
+            const material_profile_t *selected_profile = get_profile(
+                (material_profile_type_t)profile_selected_index);
+
+            if (selected_profile != NULL && validate_profile(selected_profile))
+            {
+                current_settings->target_temp = selected_profile->target_temp_celsius;
+                current_settings->stage1_default = selected_profile->stage1_duration_sec;
+                current_settings->stage2_default = selected_profile->stage2_duration_sec;
+
+                save_persistent_data();
+
+                ESP_LOGI(TAG, "Applied profile: %s (%.1f°C, %ds/%ds)",
+                         selected_profile->name,
+                         selected_profile->target_temp_celsius,
+                         selected_profile->stage1_duration_sec,
+                         selected_profile->stage2_duration_sec);
+            }
+            else
+            {
+                ESP_LOGE(TAG, "Invalid profile selected: %d", profile_selected_index);
+            }
         }
-        save_persistent_data();
-        ESP_LOGI(TAG, "Applied profile: %s", profile_items[profile_selected_index]);
+        else
+        {
+            ESP_LOGE(TAG, "Profile index out of range: %d", profile_selected_index);
+        }
+
         ui_current_state = UI_STATE_MAIN_MENU;
         break;
 

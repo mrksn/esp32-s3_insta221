@@ -40,6 +40,8 @@
 #include "main.h"
 #include "pid_autotune.h"     // NEW: Auto-tune support
 #include "system_config.h"    // components/system_config/include/ - System configuration
+#include "config_profiles.h"  // components/system_config/include/ - Material profiles
+#include "config_display.h"   // components/system_config/include/ - Display configuration
 
 static const char *TAG = "main";
 
@@ -639,18 +641,35 @@ void temp_control_task(void *pvParameters)
 }
 void init_defaults(void)
 {
-    // Default settings
-    settings.target_temp = 140.0f;
+    // Load default profile (Cotton)
+    const material_profile_t *default_profile = get_profile(DEFAULT_PROFILE);
+
+    if (default_profile != NULL && validate_profile(default_profile))
+    {
+        settings.target_temp = default_profile->target_temp_celsius;
+        settings.stage1_default = default_profile->stage1_duration_sec;
+        settings.stage2_default = default_profile->stage2_duration_sec;
+        ESP_LOGI(TAG, "Loaded default profile: %s (%.1f°C, %ds/%ds)",
+                 default_profile->name,
+                 default_profile->target_temp_celsius,
+                 default_profile->stage1_duration_sec,
+                 default_profile->stage2_duration_sec);
+    }
+    else
+    {
+        // Fallback to hardcoded defaults if profile system fails
+        settings.target_temp = DEFAULT_TEMP_CELSIUS;
+        settings.stage1_default = DEFAULT_STAGE1_DURATION;
+        settings.stage2_default = DEFAULT_STAGE2_DURATION;
+        ESP_LOGW(TAG, "Profile validation failed, using fallback defaults");
+    }
 
     // PID defaults optimized for 2200W/230V heat press with high thermal mass
     // These conservative values minimize overshoot for safety
     // Use auto-tune for optimal tuning to your specific heat press
-    settings.pid_kp = 3.5f;   // Higher proportional gain for better response to error
-    settings.pid_ki = 0.05f;  // Lower integral gain to prevent overshoot with high thermal mass
-    settings.pid_kd = 1.2f;   // Higher derivative gain to dampen oscillations
-
-    settings.stage1_default = 15;
-    settings.stage2_default = 5;
+    settings.pid_kp = DEFAULT_PID_KP;   // Higher proportional gain for better response to error
+    settings.pid_ki = DEFAULT_PID_KI;   // Lower integral gain to prevent overshoot with high thermal mass
+    settings.pid_kd = DEFAULT_PID_KD;   // Higher derivative gain to dampen oscillations
 
     // Default print run
     print_run.id = 1;
@@ -725,10 +744,18 @@ void load_persistent_data(void)
     }
 
     // Always initialize with Cotton profile settings
-    settings.target_temp = 140.0f;
-    settings.stage1_default = 15;
-    settings.stage2_default = 5;
-    ESP_LOGI(TAG, "System initialized with Cotton profile (140°C, 15s/5s)");
+    const material_profile_t *cotton_profile = get_profile(PROFILE_COTTON);
+    if (cotton_profile != NULL)
+    {
+        settings.target_temp = cotton_profile->target_temp_celsius;
+        settings.stage1_default = cotton_profile->stage1_duration_sec;
+        settings.stage2_default = cotton_profile->stage2_duration_sec;
+        ESP_LOGI(TAG, "System initialized with %s profile (%.1f°C, %ds/%ds)",
+                 cotton_profile->name,
+                 cotton_profile->target_temp_celsius,
+                 cotton_profile->stage1_duration_sec,
+                 cotton_profile->stage2_duration_sec);
+    }
 }
 
 void save_persistent_data(void)
